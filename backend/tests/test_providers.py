@@ -33,6 +33,42 @@ def test_clients_normalize_chat_and_embeddings(fake, client_cls, suffix):
     assert len(asyncio.run(c.embed("x", ["q"]))[0]) == 8
 
 
+def test_ollama_context_window_fits_the_prompt(fake):
+    c = OllamaClient(fake.url)
+    c.sync_chat("m", [{"role": "user", "content": "hi"}])
+    assert fake.app.state.chat_bodies[-1]["options"]["num_ctx"] == 4096
+    long = [{"role": "system", "content": "passage " * 5000}, {"role": "user", "content": "q?"}]  # ~10k tokens
+    collect(c.chat_stream("m", long))
+    assert fake.app.state.chat_bodies[-1]["options"]["num_ctx"] == 16384
+    c.sync_chat("m", [{"role": "user", "content": "x" * 400_000}])
+    assert fake.app.state.chat_bodies[-1]["options"]["num_ctx"] == 32768  # capped
+    c.sync_chat("m", long, options={"num_ctx": 2048})
+    assert fake.app.state.chat_bodies[-1]["options"]["num_ctx"] == 2048  # the caller's choice wins
+
+
+def test_ollama_failed_capability_lookup_is_retried(fake, monkeypatch):
+    from app.services.providers import ollama
+
+    shows = []
+    real_post = ollama.httpx.post
+
+    def post(url, *a, **kw):
+        if url.endswith("/api/show"):
+            shows.append(url)
+        return real_post(url, *a, **kw)
+
+    monkeypatch.setattr(ollama.httpx, "post", post)
+    now = [1000.0]
+    monkeypatch.setattr(ollama.time, "monotonic", lambda: now[0])
+    c = OllamaClient(fake.url)
+    c._think_setting("not-pulled-yet", {})  # the fake has no /api/show: a failed lookup
+    c._think_setting("not-pulled-yet", {})
+    assert len(shows) == 1  # briefly cached
+    now[0] += ollama._CAPS_RETRY_SECONDS + 1
+    c._think_setting("not-pulled-yet", {})
+    assert len(shows) == 2  # but not forever
+
+
 def test_ollama_status_unreachable_has_hint():
     st = asyncio.run(OllamaClient("http://host.docker.internal:1").status())
     assert not st["reachable"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 
 import httpx
@@ -21,8 +22,28 @@ def _stats(final: dict) -> dict:
     }
 
 
-# model name -> capabilities reported by /api/show ("completion", "thinking", "embedding", ...)
-_CAPS: dict[tuple[str, str], set[str]] = {}
+# model name -> (capabilities reported by /api/show ("completion", "thinking", "embedding", ...), expiry).
+# Successful lookups are kept for good; failed ones (server down, model not pulled yet) are retried.
+_CAPS: dict[tuple[str, str], tuple[set[str], float]] = {}
+_CAPS_RETRY_SECONDS = 60
+
+# Ollama's default context window is small (2048-4096 tokens) and it silently drops the start of a
+# longer prompt, which is where the system message with the retrieved passages is.
+MIN_CTX, MAX_CTX = 4096, 32768
+REPLY_BUDGET = 1024  # tokens reserved for the reply when the caller sets no num_predict
+
+
+def _context_window(messages: list[dict], options: dict) -> None:
+    """Sets options["num_ctx"] big enough for the prompt plus the reply, unless the caller chose one."""
+    if "num_ctx" in options:
+        return
+    prompt = sum(len(m.get("content") or "") for m in messages) // 4 + 8 * len(messages)  # ~4 chars/token
+    predict = options.get("num_predict")
+    need = prompt + (predict if isinstance(predict, int) and predict > 0 else REPLY_BUDGET)
+    ctx = MIN_CTX
+    while ctx < need and ctx < MAX_CTX:
+        ctx *= 2
+    options["num_ctx"] = ctx
 
 
 class OllamaClient(ProviderClient):
@@ -32,14 +53,15 @@ class OllamaClient(ProviderClient):
         """Reasoning models (qwen3, deepseek-r1...) put their reasoning in a separate field when
         asked to think; without it, it leaks into the answer. Others reject the flag entirely."""
         want = options.pop("think", True)
-        caps = _CAPS.get((self.base_url, model))
-        if caps is None:
+        caps, expiry = _CAPS.get((self.base_url, model), (None, 0.0))
+        if caps is None or time.monotonic() >= expiry:
             try:
                 r = httpx.post(f"{self.base_url}/api/show", json={"model": model}, headers=self._headers(), timeout=10)
-                caps = set(r.json().get("capabilities") or []) if r.status_code == 200 else set()
+                ok = r.status_code == 200
+                caps = set(r.json().get("capabilities") or []) if ok else set()
             except (httpx.HTTPError, ValueError):
-                caps = set()
-            _CAPS[(self.base_url, model)] = caps
+                ok, caps = False, set()
+            _CAPS[(self.base_url, model)] = (caps, float("inf") if ok else time.monotonic() + _CAPS_RETRY_SECONDS)
         return bool(want) if "thinking" in caps else None
 
     def _headers(self) -> dict:
@@ -72,6 +94,7 @@ class OllamaClient(ProviderClient):
     async def chat_stream(self, model: str, messages: list[dict], options: dict | None = None) -> AsyncIterator[dict]:
         options = dict(options or {})
         think = await asyncio.to_thread(self._think_setting, model, options)
+        _context_window(messages, options)
         body = {"model": model, "messages": messages, "stream": True, "options": options}
         if think is not None:
             body["think"] = think
@@ -121,6 +144,7 @@ class OllamaClient(ProviderClient):
                   json_schema: dict | None = None, timeout: float = 600) -> dict:
         options = dict(options or {})
         think = self._think_setting(model, options)
+        _context_window(messages, options)
         body: dict = {"model": model, "messages": messages, "stream": False, "options": options}
         if think is not None:
             body["think"] = think
