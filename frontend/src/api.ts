@@ -556,6 +556,13 @@ export interface RegistryEntry {
   train_loss: number | null
 }
 
+export interface NotifyConfig {
+  url: string
+  token_set: boolean
+  events: string[]
+  available: Record<string, string> // event -> "a training run finishes"
+}
+
 export interface LoopState {
   loop: LearningLoop
   dataset: { id: number; name: string; rows: number; splits: Record<Split, number> | null; status: string } | null
@@ -696,6 +703,10 @@ export const api = {
   runLoop: (pid: number) => request<LoopRun>(`/api/projects/${pid}/loop/run`, { method: 'POST' }),
   promote: (pid: number, ftId: number) => request<LoopState>(`/api/projects/${pid}/finetunes/${ftId}/promote`, { method: 'POST' }),
   demote: (pid: number, ftId: number) => request<LoopState>(`/api/projects/${pid}/finetunes/${ftId}/demote`, { method: 'POST' }),
+  notify: () => request<NotifyConfig>('/api/notify'),
+  saveNotify: (body: { url: string; token?: string; events: string[] }) =>
+    request<NotifyConfig>('/api/notify', { method: 'PUT', body: JSON.stringify(body) }),
+  testNotify: () => request<{ ok: boolean }>('/api/notify/test', { method: 'POST' }),
 }
 
 /** Drops files into a watched folder, as if they'd been copied there. */

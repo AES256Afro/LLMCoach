@@ -10,7 +10,7 @@ from sqlmodel import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import chat, datasets, evals, inbox, jobs, knowledge, loop, projects, providers, system, tokens, training
+from .api import chat, datasets, evals, inbox, jobs, knowledge, loop, notify, projects, providers, system, tokens, training
 from .config import settings
 from .db import engine, init_db
 from .services.device import detect_backend
@@ -65,6 +65,7 @@ app.include_router(system.router)
 app.include_router(inbox.router)
 app.include_router(loop.router)
 app.include_router(tokens.router)
+app.include_router(notify.router)
 
 
 @app.get("/api/health")
