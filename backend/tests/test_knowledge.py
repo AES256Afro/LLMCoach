@@ -74,6 +74,17 @@ def test_parse_formats(tmp_path):
     assert [p for _, p in pdf] == [1, 2] and "Second page" in pdf[1][0]
 
 
+def test_parse_text_encodings(tmp_path):
+    text = "Café crème — naïve “quotes” at 20°C. "
+    cp = (text * 4).encode("cp1252")
+    assert len(cp) % 2 == 0  # even length: the case utf-16 would happily (and wrongly) decode
+    (tmp_path / "cp.txt").write_bytes(cp)
+    (tmp_path / "u16.txt").write_bytes((text * 4).encode("utf-16"))  # with BOM
+    (tmp_path / "u8.txt").write_bytes((text * 4).encode("utf-8"))
+    for name in ("cp.txt", "u16.txt", "u8.txt"):
+        assert parse(tmp_path / name)[0][0].startswith("Café crème — naïve “quotes” at 20°C."), name
+
+
 def test_parse_rejects_unsupported_and_empty(tmp_path):
     (tmp_path / "x.exe").write_bytes(b"MZ")
     (tmp_path / "e.txt").write_text("   \n  ")
@@ -152,6 +163,9 @@ def test_cancelled_ingest_marks_documents_failed(client):
     blocker = client.post("/api/jobs", json={"kind": "demo", "config": {"steps": 1000, "delay": 0.05}}).json()
     out = client.post(f"/api/projects/{pid}/documents",
                       files=[("files", ("a.txt", io.BytesIO(b"text " * 100), "text/plain"))]).json()
+    # A document waiting for a queued ingest job can't be deleted from under it.
+    r = client.delete(f"/api/projects/{pid}/documents/{out['documents'][0]['id']}")
+    assert r.status_code == 409 and "queued" in r.json()["detail"]
     client.post(f"/api/jobs/{out['job']['id']}/cancel")
     client.post(f"/api/jobs/{blocker['id']}/cancel")
     wait_final(client, blocker["id"])

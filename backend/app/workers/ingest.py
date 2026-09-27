@@ -68,6 +68,10 @@ def main() -> None:
                 vectors += client.sync_embed(model, [c.text for c in batch], kind="document")
                 ctx.progress(i, len(docs), f"{filename}: embedded {len(vectors)}/{len(chunks)} chunks")
 
+            with Session(engine) as s:
+                if s.get(Document, doc_id) is None:  # deleted while we were embedding it
+                    print(f"[{filename}] skipped: the document was deleted", flush=True)
+                    continue
             kb.delete_doc(pid, doc_id)
             kb.add_chunks(pid, [
                 {"id": f"{doc_id}-{c.index}", "doc_id": doc_id, "chunk_index": c.index, "page": c.page,

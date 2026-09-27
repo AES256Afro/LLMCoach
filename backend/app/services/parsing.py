@@ -25,7 +25,10 @@ def _clean(text: str) -> str:
 
 def _read_text(path: Path) -> str:
     raw = path.read_bytes()
-    for enc in ("utf-8-sig", "utf-16"):
+    # UTF-16 only with a BOM: almost any even-length byte string "decodes" as UTF-16, which
+    # would turn Windows-1252 / Latin-1 text into CJK garbage.
+    encodings = ("utf-16",) if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else ("utf-8-sig", "cp1252")
+    for enc in encodings:
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:
