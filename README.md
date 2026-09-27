@@ -7,6 +7,7 @@ It runs on **BigBox** as a BoxPilot app and uses BoxPilot's Ollama for inference
 LLMCoach has **studios**: different front ends over the same projects, for people who work differently. Pick one from the switcher in the corner; LLMCoach remembers your choice. The plan and status of all of them is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - **Chat** (the default): a chat that learns. Drop files anywhere onto *Remember* or *Learn*, ask with cited answers, and run `/train`, `/compare` or `/logs` without leaving the conversation.
+- **Mission Control** (`/console`): an amber terminal of live tiles for watching runs, F1–F9 to switch views, a wall view for a second monitor, and phone alerts through ntfy when runs finish.
 - **Classic**: every page and setting in one dashboard (below).
 
 ## What it does
@@ -38,6 +39,7 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | 5 | Export fine-tunes to GGUF / Ollama; vLLM live adapter loading; Axolotl (DPO/ORPO) | ⏳ |
 | L0–L1 | Studios framework and the Chat studio | ✅ 0.3.0 |
 | L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0 (buckets and export to Ollama still to come) |
+| L4 | Mission Control studio and ntfy alerts | ✅ 0.5.0 |
 
 ## Local development
 

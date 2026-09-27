@@ -211,6 +211,13 @@ class Message(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class Setting(SQLModel, table=True):
+    """App-wide settings changed from the UI (as opposed to env settings fixed at install)."""
+
+    key: str = Field(primary_key=True)
+    value: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+
 class Source(SQLModel, table=True):
     """A folder LLMCoach watches ("an inbox"): files that land in it join the knowledge base.
 

@@ -143,6 +143,8 @@ class JobManager:
 
         d = job_dir(job_id)
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(BACKEND_DIR),
+               # Logs are read back as UTF-8; Windows would otherwise write them in its ANSI code page.
+               "PYTHONIOENCODING": "utf-8",
                # Friendlier download logs than tqdm's carriage-return bars.
                "HF_HUB_DISABLE_PROGRESS_BARS": "1", "TOKENIZERS_PARALLELISM": "false"}
         if (gpu := config.get("gpu")) is not None:

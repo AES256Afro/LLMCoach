@@ -16,7 +16,7 @@ repo. What LLMCoach needs from it is listed there (section 6) and at the end of 
 | L1 | Just the Chat, with drag-and-drop learning | ✅ 0.3.0: drop onto Remember / Learn, cited answers with a context rail, `/train /compare /learn /logs /model /kb /help /classic` as live cards. **Not yet:** a "Review" drop target (look at generated Q&A before it joins the dataset). |
 | L2 | Inbox and learning loop | ✅ 0.4.0 for the core, see below. |
 | L3 | Pipeline Canvas | Not started. A node editor (React Flow, MIT) over the L2 pipeline: sources → scan → index → learn → train → evaluate → promote, with lineage and partial re-runs. |
-| L4 | Mission Control | Not started. Live tiles, a read-only wall mode, ntfy alerts when runs end, several runs on one chart, GPU power and temperature. Wanted before the RTX 4080's first long runs. |
+| L4 | Mission Control | ✅ 0.5.0 at `/console`: F1–F9 views of live tiles, a read-only wall view (F9 / W) that follows the running job, earlier runs overlaid on the loss chart, GPU temperature and power in the header, a readable-contrast setting (C), and ntfy alerts (F8) for finished and failed jobs, loop decisions and held files. **Not yet:** a GPU history chart (power and temperature over time); the header only shows the current values. |
 | L5 | Workbench | Not started. Explorer tree, tabs and split panes, Ctrl K to every command, docked logs, run settings as code with diffs. |
 | L6 | Field Notebook | Not started. Guided four steps, margin citations, a report builder with export, findings written from evaluation results. |
 | L7 | Friendly Studio | Not started. Recipes and wizards, plain-language results, a shared "what to try next" service. |
@@ -51,7 +51,6 @@ Still to do for L2:
 - **Export the promoted adapter to Ollama** (merge + GGUF, or Ollama's safetensors adapter import where
   the architecture allows) so the chat can use it. Until then "promoted" means "the current best",
   used as the loop's baseline and shown in the registry.
-- **Notifications** (ntfy) when a run promotes, keeps, or fails, and when files are held for review.
 - Deleted files in a watched folder leave their documents in place; offer "remove documents whose
   files are gone".
 
@@ -65,4 +64,5 @@ Still to do for L2:
 ## Shipping
 
 Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmcoach:X.Y.Z` → bump
-`catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio).
+`catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio), 0.4.0 (inbox and learning loop),
+0.5.0 (Mission Control and alerts). BoxPilot PR #267 carries the catalog bump and the inbox volume.
