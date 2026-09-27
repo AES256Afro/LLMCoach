@@ -192,7 +192,7 @@ function ChatPanel() {
     if (!opened && !session.active && session.conversations.length) { setOpened(true); session.open(session.conversations[0].id) }
   }, [opened, session])
   const msgs = (session.active?.messages ?? []).filter((m) => m.role !== 'event').slice(-8)
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [msgs.length, session.pending?.answer])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [msgs.length, session.pending?.answer])
   const send = (e: FormEvent) => { e.preventDefault(); if (text.trim()) { session.send(text.trim()); setText('') } }
   const Bubble = ({ role, content, sources }: { role: string; content: string; sources?: SearchHit[] | null }) => role === 'user'
     ? <div className="ml-auto max-w-[85%] rounded-[14px_14px_4px_14px] bg-[#eef2ff] px-3 py-2 font-semibold text-[#1e2a5a]">{content}</div>
