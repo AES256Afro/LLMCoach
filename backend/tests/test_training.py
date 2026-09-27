@@ -39,6 +39,32 @@ def test_plan_on_cpu_guards(monkeypatch):
     assert training.plan("Qwen/Qwen3-0.6B", "quick", {"max_steps": 3}, "lora", "auto", 100)["total_steps"] == 3
 
 
+@pytest.mark.parametrize("override,message", [
+    ({"epochs": 0}, "epochs must be more than 0"),
+    ({"epochs": "2"}, "epochs must be a number"),
+    ({"learning_rate": 1}, "learning_rate must be more than 0 and less than 1"),
+    ({"lora_dropout": 0.95}, "lora_dropout"),
+    ({"lora_r": 0}, "lora_r must be at least 1"),
+    ({"micro_batch": 2.5}, "micro_batch must be a whole number"),
+    ({"effective_batch": True}, "effective_batch must be a number"),
+    ({"max_seq_len": 32}, "max_seq_len must be at least 64"),
+    ({"max_steps": 0}, "max_steps must be at least 1"),
+])
+def test_plan_rejects_bad_overrides(monkeypatch, override, message):
+    monkeypatch.setattr(training, "hardware", lambda: {
+        "backend": "cpu", "vram_gb": None, "ram_gb": 32, "unsloth_installed": False, "recommended_backend": "hf"})
+    with pytest.raises(training.PlanError, match=message):
+        training.plan("Qwen/Qwen3-0.6B", "quick", override, "lora", "auto", 100)
+
+
+def test_plan_accepts_good_overrides(monkeypatch):
+    monkeypatch.setattr(training, "hardware", lambda: {
+        "backend": "cpu", "vram_gb": None, "ram_gb": 32, "unsloth_installed": False, "recommended_backend": "hf"})
+    p = training.plan("Qwen/Qwen3-0.6B", "quick", {"epochs": 0.5, "lora_r": 16.0, "learning_rate": 5e-5,
+                                                   "lora_dropout": 0, "max_steps": None}, "lora", "auto", 100)
+    assert p["epochs"] == 0.5 and p["lora_r"] == 16 and isinstance(p["lora_r"], int) and p["lora_dropout"] == 0
+
+
 def test_plan_on_gpu(monkeypatch):
     monkeypatch.setattr(training, "hardware", lambda: {
         "backend": "cuda", "vram_gb": 16, "ram_gb": 64, "unsloth_installed": True, "recommended_backend": "unsloth"})

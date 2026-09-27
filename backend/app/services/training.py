@@ -96,6 +96,43 @@ class PlanError(ValueError):
     pass
 
 
+# setting -> (whole number?, lowest, highest, bounds inclusive?) for user overrides.
+_LIMITS: dict[str, tuple[bool, float, float | None, bool]] = {
+    "epochs": (False, 0, 100, False),
+    "learning_rate": (False, 0, 1, False),
+    "lora_dropout": (False, 0, 0.9, True),
+    "lora_r": (True, 1, 1024, True),
+    "lora_alpha": (True, 1, 4096, True),
+    "effective_batch": (True, 1, 4096, True),
+    "micro_batch": (True, 1, 1024, True),
+    "max_seq_len": (True, 64, 32768, True),
+    "max_steps": (True, 1, None, True),
+    "seed": (True, 0, None, True),
+}
+
+
+def _checked(overrides: dict) -> dict:
+    """Type- and range-checks overrides (None = use the preset), so a bad value fails here with a
+    clear message instead of deep inside the training worker."""
+    out = {}
+    for k, v in overrides.items():
+        if v is None:
+            continue
+        whole, lo, hi, inclusive = _LIMITS[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+            raise PlanError(f"{k} must be a number, not {v!r}")
+        if whole:
+            if v != int(v):
+                raise PlanError(f"{k} must be a whole number, not {v!r}")
+            v = int(v)
+        if v < lo or (hi is not None and v > hi) or (not inclusive and v in (lo, hi)):
+            rng = (f"at least {lo:g}" if inclusive else f"more than {lo:g}") + (
+                "" if hi is None else f" and at most {hi:g}" if inclusive else f" and less than {hi:g}")
+            raise PlanError(f"{k} must be {rng}, not {v!r}")
+        out[k] = v
+    return out
+
+
 def plan(base_model: str, preset: str, overrides: dict, method: str, backend: str, rows_train: int) -> dict:
     """Validates a request against the hardware and returns the full training config."""
     if preset not in PRESETS:
@@ -103,6 +140,7 @@ def plan(base_model: str, preset: str, overrides: dict, method: str, backend: st
     unknown = set(overrides) - TUNABLE
     if unknown:
         raise PlanError(f"unknown settings: {sorted(unknown)}")
+    overrides = _checked(overrides)
     hw = hardware()
     device = "cuda" if hw["backend"] == "cuda" else "cpu"
     if method not in ("lora", "qlora"):

@@ -106,3 +106,47 @@ def test_generate_from_knowledge_base(client, fake):
     assert rows[0]["meta"]["generated_by"] == "ollama/chatty:1b"
     # The generation request asked for structured output.
     assert fake.app.state.chat_bodies[-1]["format"]["required"] == ["pairs"]
+
+    # Split fractions are checked up front, before any dataset or job is created.
+    n_datasets = len(client.get(f"/api/projects/{pid}/datasets").json())
+    r = client.post(f"/api/projects/{pid}/datasets/generate", json={"model": "ollama/chatty:1b", "val": 0.5, "test": 0.5})
+    assert r.status_code == 400 and "fractions" in r.json()["detail"]
+    assert len(client.get(f"/api/projects/{pid}/datasets").json()) == n_datasets
+
+
+def test_salvage_with_bad_fractions_still_finalizes_and_deletes(client):
+    from sqlmodel import Session
+
+    from app.api.datasets import _salvage
+    from app.db import Dataset, DatasetStatus, Job, JobStatus, engine
+
+    pid = client.post("/api/projects", json={"name": "ds-salvage"}).json()["id"]
+    with Session(engine) as s:
+        d = Dataset(project_id=pid, name="stuck", source="generated", status=DatasetStatus.generating)
+        s.add(d)
+        s.commit()
+        s.refresh(d)
+        job = Job(kind="generate", config={"dataset_id": d.id, "val": 0.6, "test": 0.6}, status=JobStatus.failed)
+        s.add(job)
+        s.commit()
+        s.refresh(job)
+        d.job_id = job.id
+        s.add(d)
+        s.commit()
+        dsid = d.id
+        s.refresh(job)
+        s.expunge(job)
+    rows = [{"messages": [{"role": "user", "content": f"q{i}"}, {"role": "assistant", "content": f"a{i}"}], "split": "train"}
+            for i in range(12)]
+    ds.write_rows(ds.dataset_path(pid, dsid), rows)
+    _salvage(job)
+    d = client.get(f"/api/projects/{pid}/datasets/{dsid}").json()
+    assert d["status"] == "ready" and sum(d["splits"].values()) == 12
+
+    # A dataset stuck in "generating" whose job is over can still be deleted.
+    with Session(engine) as s:
+        stuck = s.get(Dataset, dsid)
+        stuck.status = DatasetStatus.generating
+        s.add(stuck)
+        s.commit()
+    assert client.delete(f"/api/projects/{pid}/datasets/{dsid}").status_code == 204
