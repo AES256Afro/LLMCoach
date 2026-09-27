@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from sqlmodel import Session, select
@@ -31,7 +32,12 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 WORKERS: dict[str, str] = {
     "demo": "app.workers.demo",
     "smoke": "app.workers.smoke",
+    "ingest": "app.workers.ingest",
 }
+
+# Called with the finished Job (any final status, including orphaned-at-startup) so a
+# kind can tidy state its worker didn't get to, e.g. documents left mid-ingest.
+FINISH_HOOKS: dict[str, Callable[[Job], None]] = {}
 
 
 def job_dir(job_id: int) -> Path:
@@ -49,10 +55,13 @@ class JobManager:
     async def start(self) -> None:
         with Session(engine) as s:
             # Anything "running" at startup was orphaned by a previous crash/restart.
-            for job in s.exec(select(Job).where(Job.status == JobStatus.running)):
+            orphans = list(s.exec(select(Job).where(Job.status == JobStatus.running)))
+            for job in orphans:
                 job.status, job.error, job.finished_at = JobStatus.failed, "orphaned by server restart", utcnow()
                 s.add(job)
             s.commit()
+            for job in orphans:
+                _run_hook(job)
             for job in s.exec(select(Job).where(Job.status == JobStatus.queued).order_by(Job.id)):
                 self._queue.put_nowait(job.id)
         self._task = asyncio.create_task(self._run_loop())
@@ -146,6 +155,16 @@ class JobManager:
             job.status, job.exit_code, job.error, job.finished_at = status, exit_code, error, utcnow()
             s.add(job)
             s.commit()
+            s.refresh(job)
+        _run_hook(job)
+
+
+def _run_hook(job: Job) -> None:
+    if hook := FINISH_HOOKS.get(job.kind):
+        try:
+            hook(job)
+        except Exception:
+            log.exception("finish hook for job #%s (%s) failed", job.id, job.kind)
 
 
 _ANSI = re.compile(r"\x1b\[[\d;]*m")

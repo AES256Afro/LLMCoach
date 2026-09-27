@@ -5,7 +5,8 @@ import { Empty, StatusBadge, fmtDuration, fmtTime } from './ui'
 export function JobTable({ jobs }: { jobs: Job[] }) {
   if (!jobs.length) return <Empty>No jobs yet.</Empty>
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+    <table className="w-full min-w-[28rem] text-sm">
       <thead className="text-left text-xs text-muted">
         <tr>
           <th className="pb-2 font-normal">#</th>
@@ -29,5 +30,6 @@ export function JobTable({ jobs }: { jobs: Job[] }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }

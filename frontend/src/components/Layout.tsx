@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useOutletContext } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom'
 import { useSystemStream } from '../hooks/streams'
 import { useAuth } from './AuthGate'
 import { ProjectSwitcher } from './ProjectSwitcher'
@@ -9,7 +10,7 @@ type SystemStream = ReturnType<typeof useSystemStream>
 const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: '◧' },
   { to: '/jobs', label: 'Jobs', icon: '▶' },
-  { to: '/knowledge', label: 'Knowledge Base', icon: '▤', soon: true },
+  { to: '/knowledge', label: 'Knowledge Base', icon: '▤' },
   { to: '/datasets', label: 'Datasets', icon: '▦', soon: true },
   { to: '/train', label: 'Train', icon: '◭', soon: true },
   { to: '/playground', label: 'Playground', icon: '◌', soon: true },
@@ -31,10 +32,23 @@ function Shell() {
   const { stats, connected } = system
   const gpu = stats?.gpus[0]
   const auth = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const location = useLocation()
+
+  // Close the mobile menu after navigating.
+  useEffect(() => setMenuOpen(false), [location.pathname])
 
   return (
-    <div className="flex h-full">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+    <div className="flex h-full flex-col md:flex-row">
+      <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2.5 md:hidden">
+        <button onClick={() => setMenuOpen(true)} aria-label="Open menu" className="text-lg text-muted">☰</button>
+        <span className="font-semibold tracking-tight">LLMCoach</span>
+        <span className={`ml-auto h-2 w-2 rounded-full ${connected ? 'bg-ok' : 'bg-bad'}`} />
+      </header>
+      {menuOpen && <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setMenuOpen(false)} />}
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-panel transition-transform md:static md:w-56 md:translate-x-0 ${
+        menuOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         <div className="px-5 py-4">
           <div className="text-lg font-semibold tracking-tight">LLMCoach</div>
           <div className="text-xs text-muted">RAG + fine-tuning workbench</div>
@@ -83,7 +97,7 @@ function Shell() {
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-auto">
-        <div className="mx-auto max-w-6xl p-6">
+        <div className="mx-auto max-w-6xl px-4 py-5 md:p-6">
           <Outlet context={system} />
         </div>
       </main>
@@ -95,12 +109,12 @@ export const useSystem = () => useOutletContext<SystemStream>()
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex items-end gap-4">
-      <div>
+    <div className="mb-6 flex flex-wrap items-end gap-x-4 gap-y-3">
+      <div className="min-w-0">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>
-      <div className="ml-auto flex gap-2">{actions}</div>
+      <div className="ml-auto flex flex-wrap gap-2">{actions}</div>
     </div>
   )
 }

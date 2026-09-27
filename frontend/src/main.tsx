@@ -8,6 +8,7 @@ import { ComingSoon } from './pages/ComingSoon'
 import { Dashboard } from './pages/Dashboard'
 import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
+import { KnowledgeBase } from './pages/KnowledgeBase'
 import { Logs } from './pages/Logs'
 import { Providers } from './pages/Providers'
 
@@ -20,12 +21,7 @@ const router = createBrowserRouter([
       { path: '/jobs/:id', element: <JobDetail /> },
       { path: '/logs', element: <Logs /> },
       { path: '/providers', element: <Providers /> },
-      {
-        path: '/knowledge',
-        element: <ComingSoon title="Knowledge Base" phase={2} bullets={[
-          'Drag-drop PDF / MD / TXT / HTML / DOCX', 'Chunking + embeddings into LanceDB',
-          'Chunk browser', 'Test-retrieval box with scores']} />,
-      },
+      { path: '/knowledge', element: <KnowledgeBase /> },
       {
         path: '/datasets',
         element: <ComingSoon title="Datasets" phase={3} bullets={[

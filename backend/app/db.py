@@ -37,6 +37,7 @@ DEFAULT_PROJECT_SETTINGS: dict[str, Any] = {
     "chunk_overlap": 150,
     "chat_model": None,  # None = first chat model the default provider reports
     "top_k": 5,
+    "search_mode": "hybrid",  # "hybrid" (keywords + vectors) or "vector"
 }
 
 
