@@ -66,9 +66,12 @@ export function useSystemStream() {
   return { stats, history, logs, connected }
 }
 
+const FINAL = new Set(['done', 'failed', 'cancelled'])
+
 /**
  * Live log lines, structured events and status for one job over /ws/jobs/:id.
- * The server replays history first, so this works for finished jobs too.
+ * The server replays history first, so this works for finished jobs too. A dropped connection
+ * (server restart, network blip) reconnects with backoff until the job is final.
  */
 export function useJobStream(jobId: number | null) {
   const [job, setJob] = useState<Job | null>(null)
@@ -81,15 +84,47 @@ export function useJobStream(jobId: number | null) {
     setLines([])
     setEvents([])
     if (jobId == null) return
-    const ws = new WebSocket(wsUrl(`/ws/jobs/${jobId}`))
-    wsRef.current = ws
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (msg.type === 'log') setLines((l) => [...l, ...msg.lines].slice(-MAX_LOG_LINES))
-      else if (msg.type === 'events') setEvents((ev) => [...ev, ...msg.events])
-      else if (msg.type === 'status') setJob(msg.job)
+    let retry: number | undefined
+    let closed = false
+    let final = false
+    let attempt = 0
+
+    const connect = () => {
+      const ws = new WebSocket(wsUrl(`/ws/jobs/${jobId}`))
+      wsRef.current = ws
+      let fresh = true
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data)
+        if (fresh) {
+          // The server replays the whole history on every connection: start over, not append.
+          fresh = false
+          attempt = 0
+          setLines([])
+          setEvents([])
+        }
+        if (msg.type === 'log') setLines((l) => [...l, ...msg.lines].slice(-MAX_LOG_LINES))
+        else if (msg.type === 'events') setEvents((ev) => [...ev, ...msg.events])
+        else if (msg.type === 'status') {
+          setJob(msg.job)
+          if (FINAL.has(msg.job.status)) final = true
+        } else if (msg.type === 'error') final = true // e.g. job not found: retrying won't help
+      }
+      ws.onclose = (e) => {
+        if (e.code === 4401) {
+          window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+          return
+        }
+        if (closed || final) return
+        retry = window.setTimeout(connect, Math.min(1000 * 2 ** attempt, 15_000))
+        attempt++
+      }
     }
-    return () => ws.close()
+    connect()
+    return () => {
+      closed = true
+      window.clearTimeout(retry)
+      wsRef.current?.close()
+    }
   }, [jobId])
 
   return { job, lines, events }
