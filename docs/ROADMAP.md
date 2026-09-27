@@ -18,7 +18,7 @@ repo. What LLMCoach needs from it is listed there (section 6) and at the end of 
 | L3 | Pipeline Canvas | ✅ 0.6.0 at `/canvas`: the project drawn from its real objects (folders → documents → knowledge base → chat and datasets → fine-tunes → evaluations, with the learning loop as a gate), React Flow (MIT), drag to rearrange (remembered per project), a drawer per node, blue lineage for the selected node, and **Run pipeline**: looks at every folder (the ledger skips files it has seen), waits for indexing and Q&A, then retrains only if the data or the training settings changed. Phones get a list of cards. **Not yet:** drawing new connections by hand (steps are added from the drawers and the Add step menu), and schedules as their own nodes. |
 | L4 | Mission Control | ✅ 0.5.0 at `/console`: F1–F9 views of live tiles, a read-only wall view (F9 / W) that follows the running job, earlier runs overlaid on the loss chart, GPU temperature and power in the header, a readable-contrast setting (C), and ntfy alerts (F8) for finished and failed jobs, loop decisions and held files. **Not yet:** a GPU history chart (power and temperature over time); the header only shows the current values. |
 | L5 | Workbench | Not started. Explorer tree, tabs and split panes, Ctrl K to every command, docked logs, run settings as code with diffs. |
-| L6 | Field Notebook | Not started. Guided four steps, margin citations, a report builder with export, findings written from evaluation results. |
+| L6 | Field Notebook | ✅ 0.7.0 at `/notebook`: a four-step stepper (Documents → Dataset → Train → Evaluate) with "Ask your bot" set apart; answers as serif prose with the cited sentences highlighted and the quoted passages in the margin; each evaluation as a report with a headline finding written from the scores, a table, notes on how far to trust it, the fine-tune's loss figure and example answers, which copies as Markdown, downloads, or prints. The wording comes from `studios/findings.ts`, shared with the Friendly Studio. |
 | L7 | Friendly Studio | Not started. Recipes and wizards, plain-language results, a shared "what to try next" service. |
 | L8 | Accounts and sharing | Not started. Owner / trainer / viewer roles, a default studio per person, an audit log. Move it up if other people start using LLMCoach. |
 
@@ -69,4 +69,4 @@ now starts again instead of failing.
 
 Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmcoach:X.Y.Z` → bump
 `catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio), 0.4.0 (inbox and learning loop),
-0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas). BoxPilot PR #267 carries the catalog bump and the inbox volume.
+0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas), 0.7.0 (Field Notebook). BoxPilot PR #267 carries the catalog bump and the inbox volume.
