@@ -30,8 +30,13 @@ def _salvage(job: Job) -> None:
             return
         path = ds.dataset_path(d.project_id, d.id)
         rows = [{"messages": r["messages"], "meta": r.get("meta", {})} for r in ds.read_rows(path)]
-        d.splits = ds.assign_splits(rows, float(job.config.get("val", 0.1)), float(job.config.get("test", 0.1)),
-                                    int(job.config.get("seed", 42))) if rows else None
+        seed = int(job.config.get("seed", 42))
+        try:
+            d.splits = ds.assign_splits(rows, float(job.config.get("val", 0.1)), float(job.config.get("test", 0.1)),
+                                        seed) if rows else None
+        except (ds.DatasetError, TypeError, ValueError):
+            # Bad fractions must not leave the dataset "generating" forever; use the defaults.
+            d.splits = ds.assign_splits(rows, seed=seed)
         ds.write_rows(path, rows)
         d.path = str(path.relative_to(settings.data_dir))
         d.row_count, d.stats = len(rows), ds.compute_stats(rows)
@@ -102,6 +107,10 @@ def generate(project_id: int, body: GenerateBody, session: Session = Depends(get
         raise HTTPException(400, "style must be 'closed' or 'grounded'")
     if not (1 <= body.pairs_per_chunk <= 10 and 1 <= body.max_chunks <= 2000):
         raise HTTPException(400, "pairs_per_chunk must be 1-10 and max_chunks 1-2000")
+    try:
+        ds.assign_splits([], body.val, body.test)  # checks the fractions now, not after an hour of generating
+    except ds.DatasetError as e:
+        raise HTTPException(400, str(e))
     d = Dataset(project_id=project_id, name=(body.name or f"Generated from {project.name}")[:120],
                 source="generated", status=DatasetStatus.generating)
     session.add(d)
@@ -190,7 +199,10 @@ def download(project_id: int, dataset_id: int, session: Session = Depends(get_se
 def delete_dataset(project_id: int, dataset_id: int, session: Session = Depends(get_session)) -> None:
     d = _get(session, project_id, dataset_id)
     if d.status == DatasetStatus.generating:
-        raise HTTPException(409, "this dataset is still being generated; cancel its job first")
+        job = session.get(Job, d.job_id) if d.job_id else None
+        if job is not None and not job.status.is_final:
+            raise HTTPException(409, "this dataset is still being generated; cancel its job first")
+        # Its job is over but the dataset was never finalized (e.g. a crashed finish hook): deletable.
     from ..db import EvalRun, FineTune
     if session.exec(select(FineTune).where(FineTune.dataset_id == d.id)).first():
         raise HTTPException(409, "fine-tunes were trained on this dataset; delete them first")
