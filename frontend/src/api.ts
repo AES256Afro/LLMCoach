@@ -54,6 +54,30 @@ export interface JobEvent {
   [key: string]: unknown
 }
 
+export interface OllamaModel {
+  name: string
+  size_gb: number
+  family: string | null
+  parameters: string | null
+  embedding: boolean
+}
+
+export interface OllamaStatus {
+  url: string
+  reachable: boolean
+  version: string | null
+  models: OllamaModel[]
+  error: string | null
+}
+
+export interface AuthState {
+  auth_enabled: boolean
+  user: string | null
+}
+
+/** Fired when any request comes back 401 so the app can show the sign-in screen. */
+export const AUTH_REQUIRED_EVENT = 'llmcoach:auth-required'
+
 export const isFinal = (s: JobStatus) => s === 'done' || s === 'failed' || s === 'cancelled'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -61,6 +85,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
+  if (res.status === 401 && !path.startsWith('/api/auth/')) {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  }
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -75,6 +102,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  me: () => request<AuthState>('/api/auth/me'),
+  login: (username: string, password: string) =>
+    request<AuthState>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  ollama: () => request<OllamaStatus>('/api/ollama'),
   system: () => request<SystemStats>('/api/system'),
   jobs: (params: { status?: JobStatus; limit?: number } = {}) => {
     const q = new URLSearchParams()
