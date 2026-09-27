@@ -9,6 +9,7 @@ import { Dashboard } from './pages/Dashboard'
 import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
 import { Logs } from './pages/Logs'
+import { Providers } from './pages/Providers'
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
       { path: '/jobs', element: <Jobs /> },
       { path: '/jobs/:id', element: <JobDetail /> },
       { path: '/logs', element: <Logs /> },
+      { path: '/providers', element: <Providers /> },
       {
         path: '/knowledge',
         element: <ComingSoon title="Knowledge Base" phase={2} bullets={[

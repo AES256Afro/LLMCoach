@@ -61,7 +61,3 @@ def test_token_tamper_and_expiry():
     assert auth.verify_token("garbage") is None
 
 
-def test_ollama_status_unreachable(client, monkeypatch):
-    monkeypatch.setattr(settings, "ollama_url", "http://127.0.0.1:1")
-    s = client.get("/api/ollama").json()
-    assert s["reachable"] is False and s["error"]

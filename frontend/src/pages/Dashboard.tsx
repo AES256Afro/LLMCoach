@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { JobTable } from '../components/JobTable'
 import { PageHeader, useSystem } from '../components/Layout'
-import { OllamaPanel } from '../components/OllamaPanel'
+import { ProvidersPanel } from '../components/ProvidersPanel'
 import { SystemPanel } from '../components/SystemPanel'
 import { Button, Card } from '../components/ui'
 import { usePolling } from '../hooks/usePolling'
@@ -31,7 +31,7 @@ export function Dashboard() {
       />
       <div className="space-y-6">
         <SystemPanel stats={stats} history={history} />
-        <OllamaPanel />
+        <ProvidersPanel />
         <Card title="Recent jobs">
           <JobTable jobs={jobs ?? []} />
         </Card>

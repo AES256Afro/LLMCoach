@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, Column
+import logging
+
+from sqlalchemy import JSON, Column, event, inspect, text
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from .config import settings
@@ -25,11 +27,71 @@ class JobStatus(str, Enum):
         return self in (JobStatus.done, JobStatus.failed, JobStatus.cancelled)
 
 
+log = logging.getLogger(__name__)
+
+# Per-project defaults; stored values override these key by key.
+# Model settings are "<provider slug>/<model>" references (see services/providers).
+DEFAULT_PROJECT_SETTINGS: dict[str, Any] = {
+    "embed_model": "ollama/nomic-embed-text",
+    "chunk_size": 1000,  # characters
+    "chunk_overlap": 150,
+    "chat_model": None,  # None = first chat model the default provider reports
+    "top_k": 5,
+}
+
+
 class Project(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
     description: str = ""
+    settings: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
+
+    def effective_settings(self) -> dict[str, Any]:
+        return {**DEFAULT_PROJECT_SETTINGS, **(self.settings or {})}
+
+
+class ProviderKind(str, Enum):
+    ollama = "ollama"
+    openai = "openai"  # any OpenAI-compatible API: llama.cpp server, vLLM, LM Studio, LocalAI, OpenRouter...
+
+
+class Provider(SQLModel, table=True):
+    """Somewhere models run. The built-in "ollama" row mirrors LLMCOACH_OLLAMA_URL."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)  # used in model refs: "<slug>/<model>"
+    name: str
+    kind: ProviderKind
+    preset: str = "custom"  # key into services/providers/presets.PRESETS
+    base_url: str
+    api_key: str | None = None
+    enabled: bool = True
+    builtin: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class DocStatus(str, Enum):
+    pending = "pending"
+    ingesting = "ingesting"
+    ready = "ready"
+    failed = "failed"
+
+
+class Document(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    filename: str
+    path: str  # relative to data_dir
+    size_bytes: int = 0
+    sha256: str = Field(index=True)
+    status: DocStatus = DocStatus.pending
+    chunk_count: int = 0
+    char_count: int = 0
+    embed_model: str | None = None  # model the stored vectors came from
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    ingested_at: datetime | None = None
 
 
 class Job(SQLModel, table=True):
@@ -47,13 +109,51 @@ class Job(SQLModel, table=True):
 
 engine = create_engine(
     f"sqlite:///{settings.db_path}",
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record) -> None:
+    # WAL lets job workers write while the API reads.
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.close()
+
+
+def _add_missing_columns() -> None:
+    """Minimal forward migration: add columns that models gained since the DB was created.
+
+    create_all() only creates missing tables, and installs on BigBox keep their database
+    across updates. New columns must therefore be nullable or have a Python-side default.
+    """
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in existing:
+                    ddl = col.type.compile(dialect=engine.dialect)
+                    default = getattr(col.default, "arg", None)
+                    if isinstance(default, Enum):
+                        default = default.value
+                    if isinstance(default, bool):
+                        ddl += f" DEFAULT {int(default)}"
+                    elif isinstance(default, (int, float)):
+                        ddl += f" DEFAULT {default}"
+                    elif isinstance(default, str):
+                        ddl += " DEFAULT '" + default.replace("'", "''") + "'"
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+                    log.info("migrated: added %s.%s", table.name, col.name)
 
 
 def init_db() -> None:
     settings.ensure_dirs()
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns()
 
 
 def get_session() -> Iterator[Session]:
