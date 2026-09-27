@@ -55,6 +55,7 @@ class OpenAICompatClient(ProviderClient):
         o = options or {}
         body: dict = {"model": model, "messages": messages, "stream": stream}
         # Map Ollama-style option names onto the OpenAI ones.
+        o = {k: v for k, v in o.items() if k != "think"}
         for src, dst in (("temperature", "temperature"), ("top_p", "top_p"), ("num_predict", "max_tokens"),
                          ("seed", "seed"), ("stop", "stop")):
             if o.get(src) is not None:
@@ -82,13 +83,16 @@ class OpenAICompatClient(ProviderClient):
                             raise ProviderError(str(chunk["error"]))
                         usage = chunk.get("usage") or usage
                         for choice in chunk.get("choices") or []:
-                            delta = (choice.get("delta") or {}).get("content") or ""
-                            if delta:
+                            d = choice.get("delta") or {}
+                            delta = d.get("content") or ""
+                            # llama.cpp, vLLM and SGLang stream reasoning separately under one of these.
+                            thinking = d.get("reasoning_content") or d.get("reasoning") or ""
+                            if delta or thinking:
                                 first = first or (time.perf_counter() - start)
-                                yield {"delta": delta, "done": False, "stats": None}
+                                yield {"delta": delta, "thinking": thinking, "done": False, "stats": None}
         except httpx.HTTPError as e:
             raise self._err(e, "chat") from e
-        yield {"delta": "", "done": True, "stats": _usage_stats(usage, time.perf_counter() - start, first)}
+        yield {"delta": "", "thinking": "", "done": True, "stats": _usage_stats(usage, time.perf_counter() - start, first)}
 
     def _embed_body(self, model: str, texts: list[str], kind: str) -> dict:
         p = embed_prefix(model, kind)
@@ -130,5 +134,6 @@ class OpenAICompatClient(ProviderClient):
         if r.status_code != 200:
             raise ProviderError(f"chat with {model} failed ({r.status_code}): {r.text[:300]}")
         data = r.json()
-        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        return {"content": content, "stats": _usage_stats(data.get("usage"), time.perf_counter() - start, None)}
+        msg = (data.get("choices") or [{}])[0].get("message") or {}
+        return {"content": msg.get("content") or "", "thinking": msg.get("reasoning_content") or msg.get("reasoning") or "",
+                "stats": _usage_stats(data.get("usage"), time.perf_counter() - start, None)}

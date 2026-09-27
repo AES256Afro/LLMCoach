@@ -1,6 +1,7 @@
 """Ollama's native API (on BigBox: BoxPilot's Ollama app)."""
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -20,8 +21,26 @@ def _stats(final: dict) -> dict:
     }
 
 
+# model name -> capabilities reported by /api/show ("completion", "thinking", "embedding", ...)
+_CAPS: dict[tuple[str, str], set[str]] = {}
+
+
 class OllamaClient(ProviderClient):
     kind = "ollama"
+
+    def _think_setting(self, model: str, options: dict) -> bool | None:
+        """Reasoning models (qwen3, deepseek-r1...) put their reasoning in a separate field when
+        asked to think; without it, it leaks into the answer. Others reject the flag entirely."""
+        want = options.pop("think", True)
+        caps = _CAPS.get((self.base_url, model))
+        if caps is None:
+            try:
+                r = httpx.post(f"{self.base_url}/api/show", json={"model": model}, headers=self._headers(), timeout=10)
+                caps = set(r.json().get("capabilities") or []) if r.status_code == 200 else set()
+            except (httpx.HTTPError, ValueError):
+                caps = set()
+            _CAPS[(self.base_url, model)] = caps
+        return bool(want) if "thinking" in caps else None
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
@@ -51,7 +70,11 @@ class OllamaClient(ProviderClient):
         return out
 
     async def chat_stream(self, model: str, messages: list[dict], options: dict | None = None) -> AsyncIterator[dict]:
-        body = {"model": model, "messages": messages, "stream": True, "options": options or {}}
+        options = dict(options or {})
+        think = await asyncio.to_thread(self._think_setting, model, options)
+        body = {"model": model, "messages": messages, "stream": True, "options": options}
+        if think is not None:
+            body["think"] = think
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=600), headers=self._headers()) as c:
                 async with c.stream("POST", f"{self.base_url}/api/chat", json=body) as r:
@@ -64,7 +87,8 @@ class OllamaClient(ProviderClient):
                         if "error" in chunk:
                             raise ProviderError(chunk["error"])
                         done = bool(chunk.get("done"))
-                        yield {"delta": (chunk.get("message") or {}).get("content", ""), "done": done,
+                        msg = chunk.get("message") or {}
+                        yield {"delta": msg.get("content", ""), "thinking": msg.get("thinking") or "", "done": done,
                                "stats": _stats(chunk) if done else None}
         except httpx.HTTPError as e:
             raise self._err(e, "chat") from e
@@ -95,7 +119,11 @@ class OllamaClient(ProviderClient):
 
     def sync_chat(self, model: str, messages: list[dict], options: dict | None = None,
                   json_schema: dict | None = None, timeout: float = 600) -> dict:
-        body: dict = {"model": model, "messages": messages, "stream": False, "options": options or {}}
+        options = dict(options or {})
+        think = self._think_setting(model, options)
+        body: dict = {"model": model, "messages": messages, "stream": False, "options": options}
+        if think is not None:
+            body["think"] = think
         if json_schema is not None:
             body["format"] = json_schema
         try:
@@ -105,4 +133,5 @@ class OllamaClient(ProviderClient):
         if r.status_code != 200:
             raise ProviderError(f"chat with {model} failed ({r.status_code}): {r.text[:300]}")
         data = r.json()
-        return {"content": (data.get("message") or {}).get("content", ""), "stats": _stats(data)}
+        msg = data.get("message") or {}
+        return {"content": msg.get("content", ""), "thinking": msg.get("thinking") or "", "stats": _stats(data)}

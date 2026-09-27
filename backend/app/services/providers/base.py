@@ -4,7 +4,8 @@ Every provider normalizes to the same shapes, so pages and workers never care wh
 model lives in Ollama, llama.cpp, vLLM or a hosted API:
 
     model info:  {"name", "size_gb", "family", "parameters", "embedding"}
-    chat chunk:  {"delta": str, "done": bool, "stats": {...} | None}
+    chat chunk:  {"delta": str, "thinking": str, "done": bool, "stats": {...} | None}
+                 ("thinking" is a reasoning model's reasoning, kept out of the answer)
     stats:       {"prompt_tokens", "completion_tokens", "tokens_per_sec", "total_ms"}  (any may be None)
 """
 from __future__ import annotations
@@ -62,7 +63,7 @@ class ProviderClient(ABC):
     @abstractmethod
     def sync_chat(self, model: str, messages: list[dict], options: dict | None = None,
                   json_schema: dict | None = None, timeout: float = 600) -> dict:
-        """Non-streaming chat for workers: {"content": str, "stats": {...}}."""
+        """Non-streaming chat for workers: {"content": str, "thinking": str, "stats": {...}}."""
 
     @abstractmethod
     def sync_embed(self, model: str, texts: list[str], kind: str = "document", timeout: float = 300) -> list[list[float]]: ...

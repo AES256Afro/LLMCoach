@@ -13,7 +13,7 @@ const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
   { to: '/knowledge', label: 'Knowledge Base', icon: '▤' },
   { to: '/datasets', label: 'Datasets', icon: '▦', soon: true },
   { to: '/train', label: 'Train', icon: '◭', soon: true },
-  { to: '/playground', label: 'Playground', icon: '◌', soon: true },
+  { to: '/playground', label: 'Playground', icon: '◌' },
   { to: '/compare', label: 'Compare', icon: '⇄', soon: true },
   { to: '/providers', label: 'Providers', icon: '⌬' },
   { to: '/logs', label: 'Logs', icon: '≡' },

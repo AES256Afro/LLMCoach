@@ -24,6 +24,7 @@ def _vec(text: str) -> list[float]:
 def fake_app() -> FastAPI:
     app = FastAPI()
     app.state.embed_inputs = []
+    app.state.chat_bodies = []
 
     # ---- Ollama -------------------------------------------------------------------
     @app.get("/api/version")
@@ -40,6 +41,7 @@ def fake_app() -> FastAPI:
     @app.post("/api/chat")
     async def ollama_chat(req: Request):
         body = await req.json()
+        app.state.chat_bodies.append(body)
         if not body.get("stream"):
             return {"message": {"content": "".join(REPLY)}, "done": True, "eval_count": 4, "eval_duration": 2e9}
 
