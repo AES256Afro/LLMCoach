@@ -1,0 +1,23 @@
+# NVIDIA override. Needs the NVIDIA driver + NVIDIA Container Toolkit on the host.
+services:
+  llmcoach:
+    build:
+      args:
+        BASE_IMAGE: pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+        CUDA_EXTRAS: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -1,0 +1,2 @@
+# NVIDIA-only extras (QLoRA 4-bit). Skipped on CPU builds.
+bitsandbytes>=0.45
