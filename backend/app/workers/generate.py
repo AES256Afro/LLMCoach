@@ -107,6 +107,13 @@ def main() -> None:
         raise SystemExit("no passages to generate from: add documents to the knowledge base first")
 
     client, model, provider = resolve(c["model"])
+    # Append mode (the chat's "Learn from this"): keep the dataset's existing rows and their splits,
+    # so an earlier test question never drifts into training between runs.
+    base_rows = ds.read_rows(ds.dataset_path(pid, dsid)) if c.get("append") else []
+    for r in base_rows:
+        r.setdefault("split", "train")
+    if base_rows:
+        print(f"[generate] appending to {len(base_rows)} existing examples", flush=True)
     print(f"[generate] {len(chunks)} passages from {len(doc_ids)} document(s), {n_pairs} pairs each", flush=True)
     print(f"[generate] model: {provider.name} / {model}   style: {style}", flush=True)
 
@@ -145,20 +152,21 @@ def main() -> None:
         ctx.metric(step=i + 1, pairs=len(rows), seconds=round(took, 1))
         example = pairs[0]["question"] if pairs else "(none)"
         print(f"[passage {i + 1}/{len(chunks)}] +{added} pairs in {took:.1f}s  e.g. {example[:90]}", flush=True)
-        _checkpoint(dsid, pid, rows)
+        _checkpoint(dsid, pid, base_rows + rows)
 
     ctx.progress(len(chunks), len(chunks), "done")
     elapsed = time.perf_counter() - started
     print(f"[generate] {len(rows)} pairs from {len(chunks)} passages in {elapsed / 60:.1f} min", flush=True)
-    _finish(dsid, rows, val=float(c.get("val", 0.1)), test=float(c.get("test", 0.1)), seed=seed,
+    _finish(dsid, base_rows + rows, val=float(c.get("val", 0.1)), test=float(c.get("test", 0.1)), seed=seed,
             error=None if rows else "the model produced no usable pairs")
     if not rows:
         raise SystemExit(1)
 
 
 def _checkpoint(dsid: int, pid: int, rows: list[dict]) -> None:
-    """Write progress so far, so a stopped job still leaves what it made."""
-    ds.write_rows(ds.dataset_path(pid, dsid), [{**r, "split": "train"} for r in rows])
+    """Write progress so far, so a stopped job still leaves what it made. New rows are written
+    without a split; one is assigned when the job finishes (or by the salvage hook)."""
+    ds.write_rows(ds.dataset_path(pid, dsid), rows)
     with Session(engine) as s:
         d = s.get(Dataset, dsid)
         if d is not None:
@@ -173,7 +181,7 @@ def _finish(dsid: int, rows: list[dict], val: float = 0.1, test: float = 0.1, se
         d = s.get(Dataset, dsid)
         if d is None:
             return
-        splits = ds.assign_splits(rows, val, test, seed) if rows else {"train": 0, "val": 0, "test": 0}
+        splits = ds.assign_new_splits(rows, val, test, seed)
         ds.write_rows(ds.dataset_path(d.project_id, dsid), rows)
         d.path = str(ds.dataset_path(d.project_id, dsid).relative_to(ds.settings.data_dir))
         d.row_count, d.splits, d.stats = len(rows), splits, ds.compute_stats(rows)

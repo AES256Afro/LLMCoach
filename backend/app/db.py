@@ -122,7 +122,7 @@ class Dataset(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     name: str
-    source: str = "upload"  # "upload" | "generated"
+    source: str = "upload"  # "upload" | "generated" | "chat"
     path: str = ""
     status: DatasetStatus = DatasetStatus.ready
     row_count: int = 0
@@ -195,12 +195,15 @@ class Conversation(SQLModel, table=True):
 class Message(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     conversation_id: int = Field(foreign_key="conversation.id", index=True)
-    role: str  # "user" | "assistant"
+    # "user" | "assistant" | "event". Events are cards in the thread (files added, a training run
+    # started...); they never reach the model, which only sees user and assistant turns.
+    role: str
     content: str
     thinking: str | None = None
     model: str | None = None
     sources: list[dict] | None = Field(default=None, sa_column=Column(JSON))
     stats: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # event card payload
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 

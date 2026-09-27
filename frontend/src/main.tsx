@@ -1,6 +1,6 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import './index.css'
 import { AuthGate } from './components/AuthGate'
 import { Layout } from './components/Layout'
@@ -14,12 +14,30 @@ import { Logs } from './pages/Logs'
 import { Playground } from './pages/Playground'
 import { Providers } from './pages/Providers'
 import { Train } from './pages/Train'
+import { ProjectProvider } from './hooks/project'
+import { preferredStudio } from './studios/registry'
+
+// Each studio is its own bundle, loaded only when it's opened.
+const ChatStudio = lazy(() => import('./studios/chat/ChatStudio'))
+
+function StudioLoading() {
+  return <div className="grid h-full place-items-center text-sm text-muted">Loading studio…</div>
+}
+
+/** "/" is the Classic dashboard for people who chose Classic; everyone else lands in their studio. */
+function Home() {
+  const studio = preferredStudio()
+  return studio.id === 'classic' ? <Dashboard /> : <Navigate to={studio.path} replace />
+}
 
 const router = createBrowserRouter([
+  { path: '/chat', element: <Suspense fallback={<StudioLoading />}><ChatStudio /></Suspense> },
+  { path: '/chat/:conversationId', element: <Suspense fallback={<StudioLoading />}><ChatStudio /></Suspense> },
   {
     element: <Layout />,
     children: [
-      { path: '/', element: <Dashboard /> },
+      { path: '/', element: <Home /> },
+      { path: '/dashboard', element: <Dashboard /> },
       { path: '/jobs', element: <Jobs /> },
       { path: '/jobs/:id', element: <JobDetail /> },
       { path: '/logs', element: <Logs /> },
@@ -36,7 +54,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate>
-      <RouterProvider router={router} />
+      <ProjectProvider>
+        <RouterProvider router={router} />
+      </ProjectProvider>
     </AuthGate>
   </StrictMode>,
 )
