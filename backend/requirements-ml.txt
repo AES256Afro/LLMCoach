@@ -1,5 +1,5 @@
 # ML stack. torch is installed separately (CUDA or CPU wheel) by the Dockerfile.
-transformers>=4.46
+transformers>=4.56
 peft>=0.13
 trl>=0.12
 datasets>=3.1

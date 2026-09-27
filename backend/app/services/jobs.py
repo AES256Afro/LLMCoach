@@ -33,6 +33,9 @@ WORKERS: dict[str, str] = {
     "demo": "app.workers.demo",
     "smoke": "app.workers.smoke",
     "ingest": "app.workers.ingest",
+    "generate": "app.workers.generate",
+    "train": "app.workers.train",
+    "evaluate": "app.workers.evaluate",
 }
 
 # Called with the finished Job (any final status, including orphaned-at-startup) so a
@@ -122,7 +125,9 @@ class JobManager:
             kind, config = job.kind, job.config
 
         d = job_dir(job_id)
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(BACKEND_DIR)}
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": str(BACKEND_DIR),
+               # Friendlier download logs than tqdm's carriage-return bars.
+               "HF_HUB_DISABLE_PROGRESS_BARS": "1", "TOKENIZERS_PARALLELISM": "false"}
         if (gpu := config.get("gpu")) is not None:
             env["CUDA_VISIBLE_DEVICES"] = str(gpu)
 

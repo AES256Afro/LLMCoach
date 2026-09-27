@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import {
-  api, isFinal, uploadDocuments,
+  api, uploadDocuments,
   type Chunk, type DocStatus, type KBDocument, type KnowledgeStats, type SearchHit, type UploadResult,
 } from '../api'
+import { JobProgress } from '../components/JobProgress'
 import { PageHeader } from '../components/Layout'
 import { ModelSelect } from '../components/ModelSelect'
 import { Button, Card, Empty, fmtTime } from '../components/ui'
 import { useProject } from '../hooks/project'
-import { useJobStream } from '../hooks/streams'
 
 const ACCEPT = '.pdf,.md,.markdown,.txt,.text,.rst,.csv,.json,.html,.htm,.docx'
 
@@ -75,7 +74,7 @@ export function KnowledgeBase() {
         <SettingsCard onSaved={reloadProjects} />
       </div>
 
-      {jobId != null && <IngestProgress jobId={jobId} onFinished={reload} onDismiss={() => setJobId(null)} />}
+      {jobId != null && <JobProgress jobId={jobId} title="Indexing" onFinished={reload} onDismiss={() => setJobId(null)} />}
 
       <Card title="Documents" className="mb-6">
         <DocumentTable
@@ -230,37 +229,6 @@ function Num({ label, value, onChange, min, max, step = 1 }: {
              onChange={(e) => onChange(Number(e.target.value))}
              className="w-full rounded border border-line bg-bg px-2 py-1.5 font-mono text-sm outline-none focus:border-accent" />
     </label>
-  )
-}
-
-function IngestProgress({ jobId, onFinished, onDismiss }: { jobId: number; onFinished: () => void; onDismiss: () => void }) {
-  const { job, lines, events } = useJobStream(jobId)
-  const progress = useMemo(() => [...events].reverse().find((e) => e.type === 'progress'), [events])
-  const done = job != null && isFinal(job.status)
-
-  useEffect(() => {
-    if (done) onFinished()
-  }, [done, onFinished])
-
-  const pct = progress && Number(progress.total) > 0 ? (Number(progress.current) / Number(progress.total)) * 100 : 0
-  return (
-    <Card
-      title={<span>Indexing · <Link to={`/jobs/${jobId}`} className="font-mono text-accent hover:underline">job #{jobId}</Link></span>}
-      actions={done && <button onClick={onDismiss} className="text-xs text-muted hover:text-text">Dismiss</button>}
-      className="mb-6"
-    >
-      <div className="mb-2 flex justify-between text-xs text-muted">
-        <span>{String(progress?.message ?? (job?.status === 'queued' ? 'Waiting for the job queue…' : 'Starting…'))}</span>
-        <span>{job?.status}</span>
-      </div>
-      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-line">
-        <div className={`h-full transition-all ${job?.status === 'failed' ? 'bg-bad' : 'bg-accent'}`}
-             style={{ width: `${done ? 100 : pct}%` }} />
-      </div>
-      <pre className="max-h-32 overflow-auto font-mono text-xs text-muted">
-        {lines.slice(-8).map((l) => l.replace(/\x1b\[[\d;]*m/g, '')).join('\n')}
-      </pre>
-    </Card>
   )
 }
 

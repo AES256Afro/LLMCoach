@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     username: str = "owner"
     password: str = ""
     session_secret: str = ""
+    # Hugging Face token, only needed for gated base models (Llama, Gemma).
+    hf_token: str = ""
     # Allow the Vite dev server during development.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
