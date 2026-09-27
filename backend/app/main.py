@@ -30,12 +30,16 @@ async def lifespan(app: FastAPI):
     log.info("compute backend: %s", detect_backend())
     log.info("ollama: %s", settings.ollama_url)
     log.info("sign-in: %s", "enabled" if auth.auth_enabled() else "DISABLED (set LLMCOACH_PASSWORD)")
+    if auth.auth_enabled() and not settings.session_secret:
+        log.warning("LLMCOACH_SESSION_SECRET is not set: everyone is signed out whenever the server restarts")
     await manager.start()
     yield
     await manager.stop()
 
 
-app = FastAPI(title="LLMCoach", lifespan=lifespan)
+# The interactive API docs are for local development; with sign-in on they'd publish the whole API surface.
+_docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if auth.auth_enabled() else {}
+app = FastAPI(title="LLMCoach", lifespan=lifespan, **_docs)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -61,13 +65,14 @@ def health() -> dict:
 
 
 class SPAStaticFiles(StaticFiles):
-    """Serves index.html for unknown paths so client-side routes survive a refresh."""
+    """Serves index.html for unknown paths so client-side routes survive a refresh.
+    Unknown /api and /ws paths stay a JSON 404: an API client shouldn't get a web page."""
 
     async def get_response(self, path, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as e:
-            if e.status_code == 404:
+            if e.status_code == 404 and not scope["path"].startswith(("/api/", "/ws/")):
                 return await super().get_response("index.html", scope)
             raise
 
