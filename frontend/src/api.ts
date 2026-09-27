@@ -225,6 +225,177 @@ export interface ChatRequest {
   think?: boolean
 }
 
+export type Split = 'train' | 'val' | 'test'
+
+export interface DatasetStats {
+  tokens_total: number
+  tokens_mean: number
+  tokens_p95: number
+  tokens_max: number
+  answer_tokens_mean: number
+  multi_turn: number
+  with_system: number
+  length_histogram: { from: number; count: number }[]
+}
+
+export interface Dataset {
+  id: number
+  project_id: number
+  name: string
+  source: 'upload' | 'generated'
+  status: 'generating' | 'ready' | 'failed'
+  row_count: number
+  splits: Record<Split, number> | null
+  stats: DatasetStats | null
+  job_id: number | null
+  error: string | null
+  created_at: string
+}
+
+export interface DatasetRow {
+  index: number
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+  split: Split
+  meta?: Record<string, unknown>
+}
+
+export interface GenerateRequest {
+  name?: string
+  model: string
+  pairs_per_chunk: number
+  max_chunks: number
+  style: 'closed' | 'grounded'
+  system_prompt?: string
+  val: number
+  test: number
+}
+
+export interface BaseModel {
+  id: string
+  params_b: number
+  license: string
+  gated: boolean
+  note: string
+}
+
+export interface TrainPreset {
+  label: string
+  note: string
+  epochs: number
+  learning_rate: number
+  lora_r: number
+  lora_alpha: number
+  lora_dropout: number
+  effective_batch: number
+  max_seq_len: number
+}
+
+export interface Hardware {
+  backend: 'cpu' | 'cuda' | 'rocm'
+  gpu: string | null
+  vram_gb: number | null
+  ram_gb: number
+  cpu_threads: number
+  unsloth_installed: boolean
+  recommended_backend: 'hf' | 'unsloth'
+}
+
+export interface TrainingOptions {
+  base_models: BaseModel[]
+  presets: Record<string, TrainPreset>
+  hardware: Hardware
+  cpu_max_params_b: number
+  hf_token_set: boolean
+}
+
+export interface TrainPlan extends TrainPreset {
+  base_model: string
+  device: 'cpu' | 'cuda'
+  backend: 'hf' | 'unsloth'
+  method: 'lora' | 'qlora'
+  params_b: number | null
+  micro_batch: number
+  grad_accum: number
+  total_steps: number
+  max_steps?: number
+  memory: { gb: number | null; where: string; note: string; budget_gb: number | null; fits: boolean }
+}
+
+export interface FineTune {
+  id: number
+  project_id: number
+  name: string
+  base_model: string
+  dataset_id: number | null
+  method: 'lora' | 'qlora'
+  backend: 'hf' | 'unsloth' | null
+  status: 'queued' | 'training' | 'ready' | 'failed' | 'cancelled'
+  config: (TrainPlan & { preset: string }) | null
+  metrics: { train_loss: number; eval_loss: number | null; steps: number; seconds: number; trainable_params: number; train_examples: number } | null
+  output_dir: string | null
+  job_id: number | null
+  error: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface FineTuneRequest {
+  name?: string
+  base_model: string
+  dataset_id: number
+  preset: string
+  method: 'lora' | 'qlora'
+  backend: 'auto' | 'hf' | 'unsloth'
+  overrides: Record<string, number | undefined>
+  dry_run?: boolean
+}
+
+export interface EvalVariant {
+  kind: 'model' | 'finetune'
+  ref: string
+  rag: boolean
+  label: string
+}
+
+export interface VariantScore {
+  n: number
+  exact_match: number
+  f1: number
+  rouge_l: number
+  judge: number | null
+  latency_ms: number
+  errors: number
+}
+
+export interface EvalOutput {
+  answer: string
+  latency_ms: number
+  error: string | null
+  sources: string[] | null
+  exact_match: number
+  f1: number
+  rouge_l: number
+  judge?: number
+  judge_reason?: string
+}
+
+export interface EvalRun {
+  id: number
+  project_id: number
+  name: string
+  dataset_id: number | null
+  split: string
+  variants: EvalVariant[]
+  judge_model: string | null
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+  summary: Record<string, VariantScore> | null
+  examples: number
+  job_id: number | null
+  error: string | null
+  created_at: string
+  results?: { index: number; question: string; reference: string; outputs: Record<string, EvalOutput> }[]
+}
+
 export const isFinal = (s: JobStatus) => s === 'done' || s === 'failed' || s === 'cancelled'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -280,6 +451,28 @@ export const api = {
     request<Conversation>(`/api/projects/${pid}/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteConversation: (pid: number, id: number) =>
     request<void>(`/api/projects/${pid}/conversations/${id}`, { method: 'DELETE' }),
+  datasets: (pid: number) => request<Dataset[]>(`/api/projects/${pid}/datasets`),
+  dataset: (pid: number, id: number) => request<Dataset>(`/api/projects/${pid}/datasets/${id}`),
+  datasetRows: (pid: number, id: number, opts: { split?: Split; q?: string; offset?: number; limit?: number } = {}) => {
+    const p = new URLSearchParams()
+    for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== '') p.set(k, String(v))
+    return request<{ rows: DatasetRow[]; total: number }>(`/api/projects/${pid}/datasets/${id}/rows?${p}`)
+  },
+  resplit: (pid: number, id: number, val: number, test: number, seed = 42) =>
+    request<Dataset>(`/api/projects/${pid}/datasets/${id}/split`, { method: 'POST', body: JSON.stringify({ val, test, seed }) }),
+  deleteDataset: (pid: number, id: number) => request<void>(`/api/projects/${pid}/datasets/${id}`, { method: 'DELETE' }),
+  generateDataset: (pid: number, body: GenerateRequest) =>
+    request<{ dataset: Dataset; job: Job }>(`/api/projects/${pid}/datasets/generate`, { method: 'POST', body: JSON.stringify(body) }),
+  trainingOptions: () => request<TrainingOptions>('/api/training/options'),
+  finetunes: (pid: number) => request<FineTune[]>(`/api/projects/${pid}/finetunes`),
+  createFinetune: (pid: number, body: FineTuneRequest) =>
+    request<{ finetune?: FineTune; job?: Job; plan: TrainPlan }>(`/api/projects/${pid}/finetunes`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteFinetune: (pid: number, id: number) => request<void>(`/api/projects/${pid}/finetunes/${id}`, { method: 'DELETE' }),
+  evals: (pid: number) => request<EvalRun[]>(`/api/projects/${pid}/evals`),
+  evalRun: (pid: number, id: number) => request<EvalRun>(`/api/projects/${pid}/evals/${id}`),
+  createEval: (pid: number, body: { name?: string; dataset_id: number; variants: Omit<EvalVariant, 'label'>[]; judge_model?: string; max_examples: number }) =>
+    request<{ eval: EvalRun; job: Job }>(`/api/projects/${pid}/evals`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteEval: (pid: number, id: number) => request<void>(`/api/projects/${pid}/evals/${id}`, { method: 'DELETE' }),
   models: (capability?: 'chat' | 'embeddings') =>
     request<ModelRef[]>(`/api/models${capability ? `?capability=${capability}` : ''}`),
   system: () => request<SystemStats>('/api/system'),
@@ -330,6 +523,31 @@ export async function streamChat(pid: number, body: ChatRequest, onEvent: (e: Ch
       if (line) onEvent(JSON.parse(line))
     }
   }
+}
+
+export interface DatasetUploadResult {
+  dataset: Dataset
+  errors: { line: number; error: string }[]
+  error_count: number
+}
+
+/** Imports a dataset file. On rejection the error carries the per-line problems. */
+export async function uploadDataset(pid: number, file: File, name: string, val: number, test: number): Promise<DatasetUploadResult> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  form.append('name', name)
+  form.append('val', String(val))
+  form.append('test', String(test))
+  const res = await fetch(`/api/projects/${pid}/datasets`, { method: 'POST', body: form })
+  if (res.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const d = body.detail
+    const err = new Error(typeof d === 'string' ? d : d?.message ?? res.statusText) as Error & { lines?: { line: number; error: string }[] }
+    err.lines = typeof d === 'object' ? d?.errors : undefined
+    throw err
+  }
+  return body
 }
 
 /** Multipart upload with progress (fetch can't report upload progress). */

@@ -82,6 +82,9 @@ def update_project(project_id: int, body: ProjectUpdate, session: Session = Depe
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: int, session: Session = Depends(get_session)) -> None:
     from .chat import delete_project_conversations  # avoids circular imports
+    from .datasets import delete_project_datasets
+    from .evals import delete_project_evals
+    from .training import delete_project_finetunes
     from .knowledge import delete_project_knowledge
 
     p = get_project_or_404(session, project_id)
@@ -90,6 +93,9 @@ def delete_project(project_id: int, session: Session = Depends(get_session)) -> 
         raise HTTPException(409, f"job #{active.id} is still {active.status.value} for this project; wait for it or cancel it")
     delete_project_knowledge(session, project_id)
     delete_project_conversations(session, project_id)
+    delete_project_evals(session, project_id)  # evals and fine-tunes reference datasets
+    delete_project_finetunes(session, project_id)
+    delete_project_datasets(session, project_id)
     for job in session.exec(select(Job).where(Job.project_id == project_id)):
         job.project_id = None  # keep the job history
         session.add(job)

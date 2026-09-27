@@ -4,17 +4,32 @@ A self-hosted workbench for making small LLMs good at specific tasks. It covers 
 
 It runs on **BigBox** as a BoxPilot app and uses BoxPilot's Ollama for inference. It's CPU-only today and uses an NVIDIA GPU (RTX 4080) once one is installed.
 
+## What it does
+
+The typical loop: put your documents in the **Knowledge Base**, chat with them in the **Playground**, **generate a dataset** of Q&A pairs from them, **fine-tune** a small model on it, then **compare** the base model, the base model with the knowledge base, and your fine-tune on held-out questions.
+
+| Page | What you can do |
+|---|---|
+| **Knowledge Base** | Upload PDF, Markdown, text, HTML, DOCX, CSV and JSON. It's chunked (Markdown-section aware), embedded, and stored in LanceDB, with **hybrid search** (keywords + vectors). Browse chunks and test retrieval with scores. |
+| **Playground** | Streaming chat with any model on any provider. The knowledge-base toggle gives **cited answers** with the passages shown. Reasoning models' thinking shows in its own panel. tok/s, time to first token, and saved conversations. |
+| **Datasets** | Import JSONL, JSON or CSV (chat, Alpaca, prompt/completion, question/answer, ShareGPT), with row-level validation and a seeded train/val/test split. You can also **generate Q&A pairs from the knowledge base** with any chat model. |
+| **Train** | LoRA / QLoRA fine-tuning with Quick/Balanced/Thorough presets and a **memory estimate against your hardware** before launch, plus live loss, eval-loss and learning-rate charts. It uses **Unsloth** on an NVIDIA GPU and **TRL + PEFT** elsewhere (CPU included, for models under 1B). |
+| **Compare** | Run a test split through up to six variants: models, fine-tunes, each with or without the knowledge base. Scores are exact match, F1 and ROUGE-L, plus an optional **LLM judge** (1–5 with reasons), shown side by side with overlap highlighting. |
+| **Providers** | Ollama (default) plus any OpenAI-compatible server, with presets for **llama.cpp, vLLM, SGLang, LocalAI and Text Embeddings Inference**. Models are named `provider/model`, so tasks can mix them. |
+| **Jobs / Logs** | Everything heavy runs as a queued job in its own process, with live logs, progress, charts and cancel. |
+
+All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM/SGLang/TEI (Apache 2.0), LanceDB (Apache 2.0), Hugging Face TRL/PEFT/transformers (Apache 2.0), Unsloth (Apache 2.0).
+
 ## Status
 
 | Phase | What | State |
 |---|---|---|
-| 0 | Hardware smoke test (`scripts/smoke_gpu.py`) | ✅ |
-| 1 | Job queue (subprocess per job), live log/metric streaming, system stats, Dashboard/Jobs/Logs UI | ✅ |
+| 0–1 | Job queue, live streaming, system stats, Dashboard/Jobs/Logs | ✅ |
 | 1.5 | BoxPilot packaging: sign-in, Ollama connection, GHCR image | ✅ |
-| 2 | Knowledge base (ingest → chunk → embed → LanceDB) + Playground chat with sources | ⏳ |
-| 3 | Datasets + LoRA/QLoRA training | ⏳ |
-| 4 | Eval + Compare | ⏳ |
-| 5 | Export to GGUF / Ollama | ⏳ |
+| 2 | Providers, Knowledge Base, Playground | ✅ |
+| 3 | Datasets (import + generation), LoRA/QLoRA training | ✅ |
+| 4 | Eval + Compare | ✅ |
+| 5 | Export fine-tunes to GGUF / Ollama; vLLM live adapter loading; Axolotl (DPO/ORPO) | ⏳ |
 
 ## Local development
 
@@ -31,7 +46,9 @@ npm install
 npm run dev
 ```
 
-Tests: `cd backend && .venv/Scripts/python -m pytest`
+Tests: `cd backend && .venv/Scripts/python -m pytest` (add `-m "not slow"` to skip the ones that download a tiny model and train it; those need `pip install torch -r requirements-ml.txt`).
+
+Point development at any Ollama by putting `LLMCOACH_OLLAMA_URL=http://bigbox:11434` in a `.env` at the repo root.
 
 Try **Run demo training** on the dashboard. It simulates a training run, so you can see the live loss chart, logs and cancel button without a GPU or torch.
 

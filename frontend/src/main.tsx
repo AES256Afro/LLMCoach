@@ -4,14 +4,16 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
 import { AuthGate } from './components/AuthGate'
 import { Layout } from './components/Layout'
-import { ComingSoon } from './pages/ComingSoon'
+import { Compare } from './pages/Compare'
 import { Dashboard } from './pages/Dashboard'
+import { Datasets } from './pages/Datasets'
 import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
 import { KnowledgeBase } from './pages/KnowledgeBase'
 import { Logs } from './pages/Logs'
 import { Playground } from './pages/Playground'
 import { Providers } from './pages/Providers'
+import { Train } from './pages/Train'
 
 const router = createBrowserRouter([
   {
@@ -23,24 +25,10 @@ const router = createBrowserRouter([
       { path: '/logs', element: <Logs /> },
       { path: '/providers', element: <Providers /> },
       { path: '/knowledge', element: <KnowledgeBase /> },
-      {
-        path: '/datasets',
-        element: <ComingSoon title="Datasets" phase={3} bullets={[
-          'Upload JSONL / CSV instruction pairs', 'Validation errors + token-length histogram',
-          'Train / val / test split', 'Generate Q&A pairs from your docs']} />,
-      },
-      {
-        path: '/train',
-        element: <ComingSoon title="Train" phase={3} bullets={[
-          'LoRA / QLoRA presets (Quick / Balanced / Thorough)', 'VRAM estimate before launch',
-          'Live loss, eval loss, LR (already working: see a demo job)', 'GPU selection per job']} />,
-      },
+      { path: '/datasets', element: <Datasets /> },
+      { path: '/train', element: <Train /> },
       { path: '/playground', element: <Playground /> },
-      {
-        path: '/compare',
-        element: <ComingSoon title="Compare" phase={4} bullets={[
-          'Same prompts across 2–4 variants', 'Scores table (EM / F1 / ROUGE / judge)', 'Diff highlighting']} />,
-      },
+      { path: '/compare', element: <Compare /> },
     ],
   },
 ])

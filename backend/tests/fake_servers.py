@@ -42,6 +42,13 @@ def fake_app() -> FastAPI:
     async def ollama_chat(req: Request):
         body = await req.json()
         app.state.chat_bodies.append(body)
+        if body.get("format") and "score" in body["format"].get("properties", {}):  # eval judge
+            return {"message": {"content": json.dumps({"score": 4, "reason": "Mostly right."})}, "done": True}
+        if body.get("format"):  # structured output: dataset generation
+            n = len(app.state.chat_bodies)
+            pairs = [{"question": f"Question {n}-{i}?", "answer": f"Answer {n}-{i}."} for i in range(3)]
+            return {"message": {"content": json.dumps({"pairs": pairs})}, "done": True,
+                    "eval_count": 30, "eval_duration": 1e9}
         if not body.get("stream"):
             return {"message": {"content": "".join(REPLY)}, "done": True, "eval_count": 4, "eval_duration": 2e9}
 

@@ -36,4 +36,7 @@ def parse_context() -> JobContext:
     p.add_argument("--job-dir", type=Path, required=True)
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # One line per HTTP request drowns the job's own progress lines.
+    for noisy in ("httpx", "httpcore", "urllib3", "filelock"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     return JobContext(args.job_dir)

@@ -1,2 +1,3 @@
-# NVIDIA-only extras (QLoRA 4-bit). Skipped on CPU builds.
-bitsandbytes>=0.45
+# NVIDIA-only extras, installed by docker-compose.gpu.yml (CUDA_EXTRAS=1). Skipped on CPU builds.
+bitsandbytes>=0.45   # QLoRA 4-bit base weights
+unsloth              # faster, lighter LoRA/QLoRA training; picked automatically when present
