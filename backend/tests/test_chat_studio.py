@@ -110,3 +110,35 @@ def test_learn_from_whole_knowledge_base(client):
 def test_training_options_recommend_a_base_model(client):
     opts = client.get("/api/training/options").json()
     assert opts["recommended_base_model"] in {m["id"] for m in opts["base_models"]}
+
+
+def test_failed_learn_keeps_what_was_already_learned(client, fake):
+    """A learn run on a document that never got indexed (say its indexing job was cut short by a
+    restart) must fail without emptying the dataset it appends to."""
+    from sqlmodel import Session
+
+    from app.api.datasets import learn_into_chat_dataset
+    from app.db import Document, DocStatus, Project, engine
+
+    pid = client.post("/api/projects", json={"name": "studio-learn-keep"}).json()["id"]
+    first = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},
+                        files=[("files", ("a.md", io.BytesIO(_text(6, "Alpha")), "text/markdown"))]).json()
+    card = first["message"]["data"]
+    wait_final(client, card["ingest_job_id"])
+    wait_final(client, card["learn"]["job_id"])
+    ds_id = card["learn"]["dataset_id"]
+    before = client.get(f"/api/projects/{pid}/datasets/{ds_id}").json()
+    assert before["row_count"] > 0
+
+    with Session(engine) as s:
+        doc = Document(project_id=pid, filename="big.pdf", path="", sha256="x" * 64, status=DocStatus.failed)
+        s.add(doc)
+        s.commit()
+        _, job = learn_into_chat_dataset(s, s.get(Project, pid), "ollama/chatty:1b", [doc.id], max_chunks=8)
+        job_id = job.id
+    assert wait_final(client, job_id)["status"] == "failed"
+    after = client.get(f"/api/projects/{pid}/datasets/{ds_id}").json()
+    assert after["row_count"] == before["row_count"] and after["status"] == "ready"
+    assert after["splits"] == before["splits"]
+    rows = client.get(f"/api/projects/{pid}/datasets/{ds_id}/rows", params={"limit": 500}).json()
+    assert rows["total"] == before["row_count"]

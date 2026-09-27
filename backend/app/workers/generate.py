@@ -101,17 +101,18 @@ def main() -> None:
     with Session(engine) as s:
         docs = {d.id: d.filename for d in s.exec(select(Document).where(Document.project_id == pid))}
     doc_ids = [d for d in (c.get("doc_ids") or list(docs)) if d in docs]
-    chunks = _sample_chunks(pid, doc_ids, int(c.get("max_chunks", 40)), seed)
-    if not chunks:
-        _finish(dsid, [], error="the knowledge base has no passages long enough to generate from")
-        raise SystemExit("no passages to generate from: add documents to the knowledge base first")
-
-    client, model, provider = resolve(c["model"])
     # Append mode (the chat's "Learn from this"): keep the dataset's existing rows and their splits,
-    # so an earlier test question never drifts into training between runs.
+    # so an earlier test question never drifts into training between runs. Read them before anything
+    # can fail, so a failed run never leaves the dataset emptier than it found it.
     base_rows = ds.read_rows(ds.dataset_path(pid, dsid)) if c.get("append") else []
     for r in base_rows:
         r.setdefault("split", "train")
+    chunks = _sample_chunks(pid, doc_ids, int(c.get("max_chunks", 40)), seed)
+    if not chunks:
+        _finish(dsid, base_rows, error="nothing new to learn from: the documents have no indexed passages yet")
+        raise SystemExit("no passages to generate from: add documents to the knowledge base first")
+
+    client, model, provider = resolve(c["model"])
     if base_rows:
         print(f"[generate] appending to {len(base_rows)} existing examples", flush=True)
     print(f"[generate] {len(chunks)} passages from {len(doc_ids)} document(s), {n_pairs} pairs each", flush=True)
