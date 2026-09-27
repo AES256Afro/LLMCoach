@@ -130,15 +130,20 @@ def generate(project_id: int, body: GenerateBody, session: Session = Depends(get
 CHAT_DATASET = "Learned in chat"
 
 
-def learn_into_chat_dataset(session: Session, project, model_ref: str, doc_ids: list[int] | None,
-                            max_chunks: int = 12) -> tuple[Dataset, Job]:
-    """Queues Q&A generation into the project's "Learned in chat" dataset, appending to it.
+INBOX_DATASET = "Learned from the inbox"
+LEARNED_DATASETS = {"chat": CHAT_DATASET, "inbox": INBOX_DATASET}
 
-    Used by the chat studio's "Learn from this". The generation job queues behind the ingest job
-    for the same documents (one job runs at a time), so their passages exist by the time it runs."""
-    d = session.exec(select(Dataset).where(Dataset.project_id == project.id, Dataset.source == "chat")).first()
+
+def learn_into_chat_dataset(session: Session, project, model_ref: str, doc_ids: list[int] | None,
+                            max_chunks: int = 12, source: str = "chat") -> tuple[Dataset, Job]:
+    """Queues Q&A generation into one of the project's learned datasets, appending to it:
+    "Learned in chat" for the chat studio's drops, "Learned from the inbox" for watched folders.
+
+    The generation job queues behind the ingest job for the same documents (one job runs at a
+    time), so their passages exist by the time it runs."""
+    d = session.exec(select(Dataset).where(Dataset.project_id == project.id, Dataset.source == source)).first()
     if d is None:
-        d = Dataset(project_id=project.id, name=CHAT_DATASET, source="chat", status=DatasetStatus.ready)
+        d = Dataset(project_id=project.id, name=LEARNED_DATASETS[source], source=source, status=DatasetStatus.ready)
         session.add(d)
         session.commit()
         session.refresh(d)

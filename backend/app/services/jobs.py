@@ -42,6 +42,9 @@ WORKERS: dict[str, str] = {
 # Called with the finished Job (any final status, including orphaned-at-startup) so a
 # kind can tidy state its worker didn't get to, e.g. documents left mid-ingest.
 FINISH_HOOKS: dict[str, Callable[[Job], None]] = {}
+# Called for every finished job, after its kind's hook, by features that follow other features'
+# jobs (the learning loop chains train -> evaluate -> promote this way).
+AFTER_HOOKS: list[Callable[[Job], None]] = []
 
 
 def job_dir(job_id: int) -> Path:
@@ -197,7 +200,7 @@ class JobManager:
 
 
 def _run_hook(job: Job) -> None:
-    if hook := FINISH_HOOKS.get(job.kind):
+    for hook in ([FINISH_HOOKS[job.kind]] if job.kind in FINISH_HOOKS else []) + AFTER_HOOKS:
         try:
             hook(job)
         except Exception:

@@ -8,6 +8,7 @@ FAKE = FakeServer().__enter__()
 os.environ["LLMCOACH_DATA_DIR"] = tempfile.mkdtemp(prefix="llmcoach-test-")
 os.environ["LLMCOACH_OLLAMA_URL"] = FAKE.url
 os.environ.pop("LLMCOACH_PASSWORD", None)
+os.environ["LLMCOACH_WATCH"] = "false"  # tests poll sources and run the loop explicitly
 
 import pytest
 from fastapi.testclient import TestClient
