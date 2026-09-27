@@ -206,5 +206,6 @@ def delete_project_knowledge(session: Session, project_id: int) -> None:
     """Used when a project is deleted."""
     for d in session.exec(select(Document).where(Document.project_id == project_id)):
         session.delete(d)
+    session.flush()
     kb.drop(project_id)
     shutil.rmtree(docs_dir(project_id), ignore_errors=True)

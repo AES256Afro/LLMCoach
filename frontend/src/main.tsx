@@ -10,6 +10,7 @@ import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
 import { KnowledgeBase } from './pages/KnowledgeBase'
 import { Logs } from './pages/Logs'
+import { Playground } from './pages/Playground'
 import { Providers } from './pages/Providers'
 
 const router = createBrowserRouter([
@@ -34,11 +35,7 @@ const router = createBrowserRouter([
           'LoRA / QLoRA presets (Quick / Balanced / Thorough)', 'VRAM estimate before launch',
           'Live loss, eval loss, LR (already working: see a demo job)', 'GPU selection per job']} />,
       },
-      {
-        path: '/playground',
-        element: <ComingSoon title="Playground" phase={2} bullets={[
-          'Chat with base / RAG / fine-tuned variants', 'Retrieved sources shown inline', 'Tokens/sec and latency']} />,
-      },
+      { path: '/playground', element: <Playground /> },
       {
         path: '/compare',
         element: <ComingSoon title="Compare" phase={4} bullets={[

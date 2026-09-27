@@ -20,6 +20,7 @@ export interface ProjectSettings {
   chat_model: string | null
   top_k: number
   search_mode: 'hybrid' | 'vector'
+  system_prompt: string | null
 }
 
 export interface Project {
@@ -174,6 +175,56 @@ export interface UploadResult {
   job: Job | null
 }
 
+export interface ChatStats {
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  tokens_per_sec: number | null
+  total_ms: number | null
+  first_token_ms: number | null
+  retrieval_ms: number | null
+}
+
+export interface ChatMessage {
+  id: number
+  conversation_id: number
+  role: 'user' | 'assistant'
+  content: string
+  thinking: string | null
+  model: string | null
+  sources: SearchHit[] | null
+  stats: ChatStats | null
+  error: string | null
+  created_at: string
+}
+
+export interface Conversation {
+  id: number
+  project_id: number
+  title: string
+  model: string | null
+  use_rag: boolean
+  system_prompt: string | null
+  created_at: string
+  updated_at: string
+  messages?: ChatMessage[]
+}
+
+export type ChatEvent =
+  | { type: 'meta'; conversation: Conversation; model: string; sources: SearchHit[] | null; retrieval_ms: number | null }
+  | { type: 'delta' | 'thinking'; text: string }
+  | { type: 'done'; message: ChatMessage }
+  | { type: 'error'; message: string; message_id?: number }
+
+export interface ChatRequest {
+  message: string
+  conversation_id?: number
+  model?: string
+  use_rag?: boolean
+  system_prompt?: string
+  temperature?: number
+  think?: boolean
+}
+
 export const isFinal = (s: JobStatus) => s === 'done' || s === 'failed' || s === 'cancelled'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -223,6 +274,12 @@ export const api = {
     request<{ results: SearchHit[]; mode: 'hybrid' | 'vector'; embed_ms: number; total_ms: number }>(`/api/projects/${pid}/search`, {
       method: 'POST', body: JSON.stringify({ query, top_k }),
     }),
+  conversations: (pid: number) => request<Conversation[]>(`/api/projects/${pid}/conversations`),
+  conversation: (pid: number, id: number) => request<Conversation>(`/api/projects/${pid}/conversations/${id}`),
+  updateConversation: (pid: number, id: number, patch: Partial<Pick<Conversation, 'title' | 'model' | 'use_rag' | 'system_prompt'>>) =>
+    request<Conversation>(`/api/projects/${pid}/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteConversation: (pid: number, id: number) =>
+    request<void>(`/api/projects/${pid}/conversations/${id}`, { method: 'DELETE' }),
   models: (capability?: 'chat' | 'embeddings') =>
     request<ModelRef[]>(`/api/models${capability ? `?capability=${capability}` : ''}`),
   system: () => request<SystemStats>('/api/system'),
@@ -243,6 +300,36 @@ export const api = {
   updateProject: (id: number, patch: { name?: string; description?: string; settings?: Partial<ProjectSettings> }) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+}
+
+/** Streams a chat reply as newline-delimited JSON events. Abort the signal to stop generation. */
+export async function streamChat(pid: number, body: ChatRequest, onEvent: (e: ChatEvent) => void, signal: AbortSignal) {
+  const res = await fetch(`/api/projects/${pid}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (res.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  if (!res.ok || !res.body) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail ?? detail } catch { /* not json */ }
+    throw new Error(detail)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl: number
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (line) onEvent(JSON.parse(line))
+    }
+  }
 }
 
 /** Multipart upload with progress (fetch can't report upload progress). */

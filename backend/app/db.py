@@ -38,6 +38,7 @@ DEFAULT_PROJECT_SETTINGS: dict[str, Any] = {
     "chat_model": None,  # None = first chat model the default provider reports
     "top_k": 5,
     "search_mode": "hybrid",  # "hybrid" (keywords + vectors) or "vector"
+    "system_prompt": None,  # default system prompt for new chats
 }
 
 
@@ -106,6 +107,30 @@ class Job(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class Conversation(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    title: str = "New chat"
+    model: str | None = None  # "<provider>/<model>" used for the last reply
+    use_rag: bool = True
+    system_prompt: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class Message(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversation.id", index=True)
+    role: str  # "user" | "assistant"
+    content: str
+    thinking: str | None = None
+    model: str | None = None
+    sources: list[dict] | None = Field(default=None, sa_column=Column(JSON))
+    stats: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 engine = create_engine(
