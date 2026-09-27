@@ -4,7 +4,6 @@ from collections import deque
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..services import ollama
 from ..services.device import system_stats
 from ..services.jobs import manager
 
@@ -41,11 +40,6 @@ def _snapshot() -> dict:
 @router.get("/api/system")
 def get_system() -> dict:
     return _snapshot()
-
-
-@router.get("/api/ollama")
-async def get_ollama() -> dict:
-    return await ollama.status()
 
 
 @router.get("/api/logs/app")

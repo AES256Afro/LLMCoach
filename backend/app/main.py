@@ -5,14 +5,16 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import jobs, projects, system
+from .api import jobs, projects, providers, system
 from .config import settings
-from .db import init_db
+from .db import engine, init_db
 from .services.device import detect_backend
 from .services.jobs import manager
+from .services.providers import ensure_builtin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger().addHandler(system.app_logs)
@@ -22,6 +24,8 @@ log = logging.getLogger("llmcoach")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with Session(engine) as s:
+        ensure_builtin(s)
     log.info("data dir: %s", settings.data_dir)
     log.info("compute backend: %s", detect_backend())
     log.info("ollama: %s", settings.ollama_url)
@@ -41,6 +45,7 @@ app.add_middleware(
 app.add_middleware(auth.AuthMiddleware)
 app.include_router(auth.router)
 app.include_router(projects.router)
+app.include_router(providers.router)
 app.include_router(jobs.router)
 app.include_router(system.router)
 

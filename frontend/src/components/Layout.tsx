@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom'
 import { useSystemStream } from '../hooks/streams'
 import { useAuth } from './AuthGate'
+import { ProjectSwitcher } from './ProjectSwitcher'
+import { ProjectProvider } from '../hooks/project'
 
 type SystemStream = ReturnType<typeof useSystemStream>
 
@@ -12,10 +14,19 @@ const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
   { to: '/train', label: 'Train', icon: '◭', soon: true },
   { to: '/playground', label: 'Playground', icon: '◌', soon: true },
   { to: '/compare', label: 'Compare', icon: '⇄', soon: true },
+  { to: '/providers', label: 'Providers', icon: '⌬' },
   { to: '/logs', label: 'Logs', icon: '≡' },
 ]
 
 export function Layout() {
+  return (
+    <ProjectProvider>
+      <Shell />
+    </ProjectProvider>
+  )
+}
+
+function Shell() {
   const system = useSystemStream()
   const { stats, connected } = system
   const gpu = stats?.gpus[0]
@@ -28,6 +39,7 @@ export function Layout() {
           <div className="text-lg font-semibold tracking-tight">LLMCoach</div>
           <div className="text-xs text-muted">RAG + fine-tuning workbench</div>
         </div>
+        <ProjectSwitcher />
         <nav className="flex-1 space-y-0.5 px-2">
           {NAV.map((n) => (
             <NavLink
