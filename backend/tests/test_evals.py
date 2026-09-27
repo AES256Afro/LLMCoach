@@ -15,6 +15,15 @@ def test_metrics():
     assert metrics.rouge_l("totally different", "cat sat") == 0.0
 
 
+def test_strip_thinking():
+    from app.services.local_infer import strip_thinking
+
+    assert strip_thinking("<think>\nLet me see.\n</think>\n\nParis.") == "Paris."
+    assert strip_thinking("<think>\n\n</think>\n\nParis.") == "Paris."  # Qwen3 with thinking off
+    assert strip_thinking("<think>ran out of tokens mid-thought") == ""
+    assert strip_thinking("  Plain answer. ") == "Plain answer."
+
+
 def _dataset(client, pid):
     rows = [{"messages": [{"role": "system", "content": "Be brief."},
                           {"role": "user", "content": f"Question {i}?"},
@@ -59,6 +68,23 @@ def test_eval_models_with_rag_and_judge(client, fake):
                for b in fake.app.state.chat_bodies if "messages" in b)
 
     assert client.delete(f"/api/projects/{pid}/datasets/{d['id']}").status_code == 409  # used by an eval
+    assert client.delete(f"/api/projects/{pid}").status_code == 204
+
+
+def test_eval_split_is_validated_and_fallback_recorded(client):
+    pid = client.post("/api/projects", json={"name": "eval-split"}).json()["id"]
+    rows = [{"messages": [{"role": "user", "content": f"Q{i}?"}, {"role": "assistant", "content": f"A{i}."}]}
+            for i in range(12)]
+    data = "\n".join(json.dumps(r) for r in rows).encode()
+    d = client.post(f"/api/projects/{pid}/datasets", data={"test": "0", "val": "0.25"},
+                    files={"file": ("qa.jsonl", io.BytesIO(data), "application/jsonl")}).json()["dataset"]
+    variants = [{"kind": "model", "ref": "ollama/chatty:1b"}]
+    r = client.post(f"/api/projects/{pid}/evals", json={"dataset_id": d["id"], "split": "tset", "variants": variants})
+    assert r.status_code == 400 and "split" in r.json()["detail"]
+    r = client.post(f"/api/projects/{pid}/evals", json={"dataset_id": d["id"], "variants": variants})
+    assert wait_final(client, r.json()["job"]["id"])["status"] == "done"
+    e = client.get(f"/api/projects/{pid}/evals/{r.json()['eval']['id']}").json()
+    assert e["split"] == "val" and e["examples"] == 3  # no test rows, so it used (and says) val
     assert client.delete(f"/api/projects/{pid}").status_code == 204
 
 

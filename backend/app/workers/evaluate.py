@@ -59,9 +59,12 @@ def _update(eval_id: int, **fields) -> None:
         s.commit()
 
 
-def _examples(dataset: Dataset, split: str, limit: int) -> list[dict]:
+def _examples(dataset: Dataset, split: str, limit: int) -> tuple[list[dict], str]:
+    """-> (examples, the split they came from: the requested one, or val when it's empty)."""
     rows = ds.read_rows(ds.dataset_path(dataset.project_id, dataset.id))
-    chosen = [r for r in rows if r.get("split") == split] or [r for r in rows if r.get("split") == "val"]
+    chosen = [r for r in rows if r.get("split") == split]
+    if not chosen:
+        split, chosen = "val", [r for r in rows if r.get("split") == "val"]
     out = []
     for i, r in enumerate(chosen[:limit]):
         msgs = r["messages"]
@@ -69,7 +72,7 @@ def _examples(dataset: Dataset, split: str, limit: int) -> list[dict]:
         convo = [m for m in msgs[:-1] if m["role"] != "system"]
         out.append({"index": i, "system": system, "history": convo[:-1], "question": convo[-1]["content"],
                     "reference": msgs[-1]["content"]})
-    return out
+    return out, split
 
 
 class Retriever:
@@ -109,10 +112,13 @@ def main() -> None:
         s.expunge(project)
         s.expunge(dataset)
 
-    examples = _examples(dataset, split, int(ctx.config.get("max_examples", 30)))
+    examples, used = _examples(dataset, split, int(ctx.config.get("max_examples", 30)))
     if not examples:
         raise SystemExit(f"the dataset has no {split} (or val) examples to evaluate on")
-    _update(eval_id, status="running", examples=len(examples))
+    if used != split:
+        print(f"[eval] the dataset has no {split} examples; using {used}", flush=True)
+        split = used
+    _update(eval_id, status="running", examples=len(examples), split=split)
     print(f"[eval] {len(examples)} questions from '{dataset.name}' ({split}) × {len(variants)} variants", flush=True)
     retriever = Retriever(project) if any(v.get("rag") for v in variants) and kb.count(project.id) else None
     judge = resolve(judge_ref) if judge_ref else None
