@@ -11,6 +11,7 @@ const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
   { to: '/dashboard', label: 'Dashboard', icon: '◧' },
   { to: '/jobs', label: 'Jobs', icon: '▶' },
   { to: '/knowledge', label: 'Knowledge Base', icon: '▤' },
+  { to: '/inbox', label: 'Inbox', icon: '⇲' },
   { to: '/datasets', label: 'Datasets', icon: '▦' },
   { to: '/train', label: 'Train', icon: '◭' },
   { to: '/playground', label: 'Playground', icon: '◌' },
