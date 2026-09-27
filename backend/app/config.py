@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     ollama_url: str = "http://localhost:11434"
+    # Sign-in. Auth is disabled when password is empty (local development).
+    username: str = "owner"
+    password: str = ""
+    session_secret: str = ""
     # Allow the Vite dev server during development.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 

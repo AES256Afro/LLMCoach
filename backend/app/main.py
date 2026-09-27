@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import auth
 from .api import jobs, projects, system
 from .config import settings
 from .db import init_db
@@ -23,6 +24,8 @@ async def lifespan(app: FastAPI):
     init_db()
     log.info("data dir: %s", settings.data_dir)
     log.info("compute backend: %s", detect_backend())
+    log.info("ollama: %s", settings.ollama_url)
+    log.info("sign-in: %s", "enabled" if auth.auth_enabled() else "DISABLED (set LLMCOACH_PASSWORD)")
     await manager.start()
     yield
     await manager.stop()
@@ -35,6 +38,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(auth.AuthMiddleware)
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(jobs.router)
 app.include_router(system.router)

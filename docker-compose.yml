@@ -1,24 +1,21 @@
-# CPU-only (works on BigBox today):   docker compose up -d --build
-# With the NVIDIA GPU installed:      docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Standalone deployment. On BigBox, install LLMCoach from BoxPilot's app catalog instead.
+#
+# CPU-only:             docker compose up -d --build
+# NVIDIA GPU installed: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Expects an Ollama server on the host at port 11434 (e.g. BoxPilot's Ollama app).
 services:
   llmcoach:
     build:
       context: .
       dockerfile: docker/Dockerfile
     ports:
-      - "${LLMCOACH_PORT:-8000}:8000"
+      - "${LLMCOACH_PORT:-8420}:8000"
     volumes:
       - ./data:/data
-    environment:
-      LLMCOACH_OLLAMA_URL: http://ollama:11434
-    depends_on:
-      - ollama
-    restart: unless-stopped
-
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ./data/ollama:/root/.ollama
-    ports:
-      - "127.0.0.1:11434:11434"
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - host.docker.internal:host-gateway
     restart: unless-stopped

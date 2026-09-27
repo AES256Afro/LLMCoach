@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { wsUrl, type AppLog, type Job, type JobEvent, type SystemStats } from '../api'
+import { AUTH_REQUIRED_EVENT, wsUrl, type AppLog, type Job, type JobEvent, type SystemStats } from '../api'
 
 const MAX_LOG_LINES = 20_000
 const MAX_HISTORY = 150 // ~5 min of 2s samples
@@ -29,8 +29,9 @@ export function useSystemStream() {
     const connect = () => {
       ws = new WebSocket(wsUrl('/ws/system'))
       ws.onopen = () => setConnected(true)
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         setConnected(false)
+        if (e.code === 4401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
         if (!closed) retry = window.setTimeout(connect, 2000)
       }
       ws.onmessage = (e) => {

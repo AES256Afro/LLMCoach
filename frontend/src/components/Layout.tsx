@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom'
 import { useSystemStream } from '../hooks/streams'
+import { useAuth } from './AuthGate'
 
 type SystemStream = ReturnType<typeof useSystemStream>
 
@@ -18,6 +19,7 @@ export function Layout() {
   const system = useSystemStream()
   const { stats, connected } = system
   const gpu = stats?.gpus[0]
+  const auth = useAuth()
 
   return (
     <div className="flex h-full">
@@ -60,6 +62,11 @@ export function Layout() {
             <NavLink to={`/jobs/${stats.running_job_id}`} className="block text-accent hover:underline">
               ▶ Job #{stats.running_job_id} running
             </NavLink>
+          )}
+          {auth?.state.user && (
+            <button onClick={auth.signOut} className="block pt-1 hover:text-text">
+              Sign out ({auth.state.user})
+            </button>
           )}
         </div>
       </aside>
