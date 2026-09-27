@@ -11,6 +11,10 @@
   --color-ok: #4ade80;
   --color-warn: #fbbf24;
   --color-bad: #f87171;
+  /* Tokens studios add; Classic maps them onto its own palette. */
+  --color-card: #12151c;
+  --color-accent-dim: #1c2440;
+  --color-warm: #fbbf24;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 }
@@ -53,3 +57,33 @@ body {
 .prose-chat table { border-collapse: collapse; font-size: 0.95em; }
 .prose-chat th, .prose-chat td { border: 1px solid var(--color-line); padding: 0.3em 0.6em; }
 .prose-chat > :first-child { margin-top: 0; }
+
+/* ---- Just the Chat studio: warm charcoal with a sage accent (see the redesign mockups). ----
+   Re-declaring the theme tokens here re-themes every shared component rendered inside. */
+.studio-chat {
+  --color-bg: #1a1917;
+  --color-panel: #211f1c;
+  --color-panel-2: #2f2c28;
+  --color-card: #272521;
+  --color-line: #36332e;
+  --color-muted: #9b958a;
+  --color-text: #ece7de;
+  --color-accent: #a6cfae;
+  --color-accent-dim: #2d3a2f;
+  --color-warm: #e3b86c;
+  --color-ok: #a6cfae;
+  --color-bad: #f0907a;
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color-scheme: dark;
+}
+.studio-chat ::selection { background: #3d4d40; }
+.studio-chat .prose-chat { font-size: 15px; line-height: 1.7; }
+.studio-chat .prose-chat code { background: var(--color-card); }
+.studio-chat .prose-chat pre { background: #141311; }
+@keyframes chat-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.studio-chat .rise { animation: chat-rise .22s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .studio-chat .rise { animation: none; } }

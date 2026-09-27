@@ -29,14 +29,15 @@ def _salvage(job: Job) -> None:
         if d is None or d.status != DatasetStatus.generating:
             return
         path = ds.dataset_path(d.project_id, d.id)
-        rows = [{"messages": r["messages"], "meta": r.get("meta", {})} for r in ds.read_rows(path)]
+        # Rows that already had a split (earlier runs appended to) keep it; new ones get one now.
+        rows = ds.read_rows(path)
         seed = int(job.config.get("seed", 42))
         try:
-            d.splits = ds.assign_splits(rows, float(job.config.get("val", 0.1)), float(job.config.get("test", 0.1)),
-                                        seed) if rows else None
+            d.splits = ds.assign_new_splits(rows, float(job.config.get("val", 0.1)), float(job.config.get("test", 0.1)),
+                                            seed) if rows else None
         except (ds.DatasetError, TypeError, ValueError):
             # Bad fractions must not leave the dataset "generating" forever; use the defaults.
-            d.splits = ds.assign_splits(rows, seed=seed)
+            d.splits = ds.assign_new_splits(rows, seed=seed)
         ds.write_rows(path, rows)
         d.path = str(path.relative_to(settings.data_dir))
         d.row_count, d.stats = len(rows), ds.compute_stats(rows)
@@ -124,6 +125,38 @@ def generate(project_id: int, body: GenerateBody, session: Session = Depends(get
     session.refresh(d)
     session.refresh(job)  # the commit expired it; an expired object serializes as {}
     return {"dataset": d, "job": job}
+
+
+CHAT_DATASET = "Learned in chat"
+
+
+def learn_into_chat_dataset(session: Session, project, model_ref: str, doc_ids: list[int] | None,
+                            max_chunks: int = 12) -> tuple[Dataset, Job]:
+    """Queues Q&A generation into the project's "Learned in chat" dataset, appending to it.
+
+    Used by the chat studio's "Learn from this". The generation job queues behind the ingest job
+    for the same documents (one job runs at a time), so their passages exist by the time it runs."""
+    d = session.exec(select(Dataset).where(Dataset.project_id == project.id, Dataset.source == "chat")).first()
+    if d is None:
+        d = Dataset(project_id=project.id, name=CHAT_DATASET, source="chat", status=DatasetStatus.ready)
+        session.add(d)
+        session.commit()
+        session.refresh(d)
+    # If it's already learning, this job simply queues behind that one and appends after it.
+    cfg = project.effective_settings()
+    config = {"project_id": project.id, "dataset_id": d.id, "model": model_ref, "doc_ids": doc_ids,
+              "max_chunks": max_chunks, "pairs_per_chunk": 3, "style": "closed", "append": True,
+              "system_prompt": cfg.get("system_prompt"), "val": 0.1, "test": 0.1, "seed": 42}
+    d.status = DatasetStatus.generating
+    session.add(d)
+    session.commit()
+    job = manager.submit(session, "generate", config, project_id=project.id)
+    d.job_id = job.id
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    session.refresh(job)
+    return d, job
 
 
 @router.get("/{dataset_id}")

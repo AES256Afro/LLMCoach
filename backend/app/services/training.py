@@ -78,6 +78,14 @@ def hardware() -> dict:
     }
 
 
+def recommended_base_model(hw: dict) -> str:
+    """A sensible default for one-click training (the chat studio's /train): the largest open
+    model that trains comfortably on this machine."""
+    if hw.get("backend") == "cuda":
+        return "Qwen/Qwen3-4B" if (hw.get("vram_gb") or 0) >= 15 else "Qwen/Qwen3-1.7B"
+    return "Qwen/Qwen2.5-0.5B-Instruct"
+
+
 def estimate(params_b: float | None, method: str, max_seq_len: int, micro_batch: int, device: str) -> dict:
     """Rough peak memory for LoRA training. Deliberately conservative: better to warn early."""
     if params_b is None:

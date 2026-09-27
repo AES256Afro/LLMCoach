@@ -3,12 +3,12 @@ import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom
 import { useSystemStream } from '../hooks/streams'
 import { useAuth } from './AuthGate'
 import { ProjectSwitcher } from './ProjectSwitcher'
-import { ProjectProvider } from '../hooks/project'
+import { StudioSwitcher } from '../studios/StudioSwitcher'
 
 type SystemStream = ReturnType<typeof useSystemStream>
 
 const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
-  { to: '/', label: 'Dashboard', icon: '◧' },
+  { to: '/dashboard', label: 'Dashboard', icon: '◧' },
   { to: '/jobs', label: 'Jobs', icon: '▶' },
   { to: '/knowledge', label: 'Knowledge Base', icon: '▤' },
   { to: '/datasets', label: 'Datasets', icon: '▦' },
@@ -19,15 +19,8 @@ const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
   { to: '/logs', label: 'Logs', icon: '≡' },
 ]
 
+/** The Classic studio: every page and setting in one dashboard. */
 export function Layout() {
-  return (
-    <ProjectProvider>
-      <Shell />
-    </ProjectProvider>
-  )
-}
-
-function Shell() {
   const system = useSystemStream()
   const { stats, connected } = system
   const gpu = stats?.gpus[0]
@@ -49,10 +42,14 @@ function Shell() {
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-panel transition-transform md:static md:w-56 md:translate-x-0 ${
         menuOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-        <div className="px-5 py-4">
-          <div className="text-lg font-semibold tracking-tight">LLMCoach</div>
-          <div className="text-xs text-muted">RAG + fine-tuning workbench</div>
-        </div>
+        <StudioSwitcher current="classic" className="px-3 py-3">
+          <span className="flex items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-panel-2">
+            <span className="min-w-0">
+              <span className="block text-lg font-semibold tracking-tight">LLMCoach</span>
+              <span className="block text-xs text-muted">Classic studio · switch ▾</span>
+            </span>
+          </span>
+        </StudioSwitcher>
         <ProjectSwitcher />
         <nav className="flex-1 space-y-0.5 px-2">
           {NAV.map((n) => (

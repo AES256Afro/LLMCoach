@@ -66,17 +66,28 @@ def list_documents(project_id: int, session: Session = Depends(get_session)) -> 
 async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
                            session: Session = Depends(get_session)) -> dict:
     project = get_project_or_404(session, project_id)
+    items = [(f.filename or "file", await f.read(MAX_FILE_BYTES + 1)) for f in files]
+    added, skipped = await store_documents(session, project_id, items)
+    job = _submit_ingest(session, project, [d.id for d in added]) if added else None
+    for d in added:
+        session.refresh(d)
+    return {"documents": added, "skipped": skipped, "job": job}
+
+
+async def store_documents(session: Session, project_id: int,
+                          items: list[tuple[str, bytes]]) -> tuple[list[Document], list[dict]]:
+    """Saves (filename, bytes) pairs as knowledge-base documents, skipping unsupported, empty,
+    oversized and duplicate files. Shared by the upload page and the chat's drop zone."""
     target = docs_dir(project_id)
     target.mkdir(parents=True, exist_ok=True)
-    existing = {d.sha256 for d in session.exec(select(Document).where(Document.project_id == project_id))}
+    existing = {d.sha256: d.id for d in session.exec(select(Document).where(Document.project_id == project_id))}
     added: list[Document] = []
     skipped: list[dict] = []
-    for f in files:
-        name = _safe_name(f.filename)
+    for filename, data in items:
+        name = _safe_name(filename)
         if Path(name).suffix.lower() not in SUPPORTED:
             skipped.append({"filename": name, "reason": "unsupported file type"})
             continue
-        data = await f.read(MAX_FILE_BYTES + 1)
         if len(data) > MAX_FILE_BYTES:
             skipped.append({"filename": name, "reason": f"larger than {MAX_FILE_BYTES // 1024**2} MB"})
             continue
@@ -85,23 +96,24 @@ async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
             continue
         digest = await asyncio.to_thread(lambda: hashlib.sha256(data).hexdigest())
         if digest in existing:
-            skipped.append({"filename": name, "reason": "already in this knowledge base"})
+            skipped.append({"filename": name, "reason": "already in this knowledge base", "doc_id": existing[digest]})
             continue
-        existing.add(digest)
         doc = Document(project_id=project_id, filename=name, path="", size_bytes=len(data), sha256=digest)
         session.add(doc)
         session.commit()
         session.refresh(doc)
+        existing[digest] = doc.id
         path = target / f"{doc.id}_{name}"
         await asyncio.to_thread(path.write_bytes, data)
         doc.path = str(path.relative_to(settings.data_dir))
         session.add(doc)
         session.commit()
         added.append(doc)
-    job = _submit_ingest(session, project, [d.id for d in added]) if added else None
-    for d in added:
-        session.refresh(d)
-    return {"documents": added, "skipped": skipped, "job": job}
+    return added, skipped
+
+
+def submit_ingest(session: Session, project: Project, doc_ids: list[int]) -> Job:
+    return _submit_ingest(session, project, doc_ids)
 
 
 class Reindex(BaseModel):
