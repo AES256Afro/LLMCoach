@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +13,8 @@ from ..services import kb, rag
 from ..services.providers import ProviderError, client_for, list_providers, resolve
 from .knowledge import retrieve
 from .projects import get_project_or_404
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["chat"])
 
@@ -118,7 +122,20 @@ async def chat(project_id: int, body: ChatRequest, session: Session = Depends(ge
         conv.use_rag = body.use_rag
     if body.system_prompt is not None:
         conv.system_prompt = body.system_prompt or None
+    # Resolve the model and retrieve before anything is committed, so a failure here
+    # (no model, provider down, index mismatch) doesn't leave an empty "New chat" behind.
     model_ref = body.model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+    try:
+        client, model, _ = resolve(model_ref, session)
+    except ProviderError as e:
+        raise HTTPException(400, str(e))
+
+    sources = None
+    retrieval_ms = None
+    if conv.use_rag and await asyncio.to_thread(kb.count, project_id) > 0:
+        r = await retrieve(session, project, question, body.top_k)
+        sources, retrieval_ms = r["results"], r["total_ms"]
+
     conv.model = model_ref
     if conv.title == "New chat":
         conv.title = question[:60] + ("…" if len(question) > 60 else "")
@@ -129,17 +146,6 @@ async def chat(project_id: int, body: ChatRequest, session: Session = Depends(ge
 
     history = [{"role": m.role, "content": m.content} for m in
                session.exec(select(Message).where(Message.conversation_id == conv.id).order_by(Message.id))]
-
-    try:
-        client, model, _ = resolve(model_ref, session)
-    except ProviderError as e:
-        raise HTTPException(400, str(e))
-
-    sources = None
-    retrieval_ms = None
-    if conv.use_rag and kb.count(project_id) > 0:
-        r = await retrieve(session, project, question, body.top_k)
-        sources, retrieval_ms = r["results"], r["total_ms"]
 
     session.add(Message(conversation_id=conv.id, role="user", content=question))
     session.commit()
@@ -170,7 +176,10 @@ async def chat(project_id: int, body: ChatRequest, session: Session = Depends(ge
                     stats = chunk.get("stats")
         except ProviderError as e:
             error = str(e)
-        except BaseException:  # client disconnected (Stop): keep what we have
+        except Exception as e:  # a bug or an unexpected reply: report it rather than call it "stopped"
+            log.exception("chat stream failed")
+            error = f"{type(e).__name__}: {e}"
+        except BaseException:  # client disconnected (Stop) or cancelled: keep what we have
             error = "stopped"
             _save(conv.id, model_ref, answer, thinking, sources, stats, first_token_ms, retrieval_ms, error)
             raise

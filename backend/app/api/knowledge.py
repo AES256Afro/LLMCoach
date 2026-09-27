@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import re
 import shutil
@@ -9,7 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..config import settings
-from ..db import Document, DocStatus, Job, Project, engine, get_session
+from ..db import Document, DocStatus, Job, JobStatus, Project, engine, get_session
 from ..services import kb
 from ..services.jobs import FINISH_HOOKS, manager
 from ..services.parsing import SUPPORTED
@@ -82,7 +83,7 @@ async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
         if not data:
             skipped.append({"filename": name, "reason": "empty file"})
             continue
-        digest = hashlib.sha256(data).hexdigest()
+        digest = await asyncio.to_thread(lambda: hashlib.sha256(data).hexdigest())
         if digest in existing:
             skipped.append({"filename": name, "reason": "already in this knowledge base"})
             continue
@@ -92,7 +93,7 @@ async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
         session.commit()
         session.refresh(doc)
         path = target / f"{doc.id}_{name}"
-        path.write_bytes(data)
+        await asyncio.to_thread(path.write_bytes, data)
         doc.path = str(path.relative_to(settings.data_dir))
         session.add(doc)
         session.commit()
@@ -126,8 +127,13 @@ def delete_document(project_id: int, doc_id: int, session: Session = Depends(get
         raise HTTPException(404, "document not found")
     if doc.status == DocStatus.ingesting:
         raise HTTPException(409, "this document is being ingested; wait for the job or cancel it first")
+    if doc.status == DocStatus.pending:
+        active = session.exec(select(Job).where(Job.kind == "ingest", Job.project_id == project_id,
+                                                Job.status.in_([JobStatus.queued, JobStatus.running])))
+        if any(doc_id in (job.config or {}).get("doc_ids", []) for job in active):
+            raise HTTPException(409, "this document is queued for ingest; wait for the job or cancel it first")
+    # No full-text index rebuild: the deleted rows simply stop matching, and the next ingest rebuilds it.
     kb.delete_doc(project_id, doc_id)
-    kb.ensure_text_index(project_id)
     if doc.path:
         (settings.data_dir / doc.path).unlink(missing_ok=True)
     session.delete(doc)
@@ -184,7 +190,7 @@ async def retrieve(session: Session, project: Project, query: str, top_k: int | 
     embed_ms = (time.perf_counter() - started) * 1000
     try:
         text = query if cfg.get("search_mode", "hybrid") == "hybrid" else None
-        hits, mode = kb.search(project.id, vec, k, doc_ids, text=text)
+        hits, mode = await asyncio.to_thread(kb.search, project.id, vec, k, doc_ids, text=text)
     except kb.KBError as e:
         raise HTTPException(409, str(e))
     names = {d.id: d.filename for d in session.exec(select(Document).where(Document.project_id == project.id))}

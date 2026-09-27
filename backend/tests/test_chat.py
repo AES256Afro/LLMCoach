@@ -72,3 +72,28 @@ def test_chat_provider_error_is_streamed(client):
     conv = client.get(f"/api/projects/{pid}/conversations/{events[0]['conversation']['id']}").json()
     assert conv["messages"][-1]["error"]
     client.delete(f"/api/providers/{p['id']}")
+
+
+def test_failed_chat_leaves_no_empty_conversation(client):
+    pid = client.post("/api/projects", json={"name": "chat-nothing-saved"}).json()["id"]
+    p = client.post("/api/providers", json={"preset": "custom", "name": "Gone", "base_url": "http://127.0.0.1:1/v1"}).json()
+    client.patch(f"/api/providers/{p['id']}", json={"enabled": False})
+    r = client.post(f"/api/projects/{pid}/chat", json={"message": "hi", "model": "gone/m"})
+    assert r.status_code == 400
+    assert client.get(f"/api/projects/{pid}/conversations").json() == []
+    client.delete(f"/api/providers/{p['id']}")
+
+
+def test_unexpected_stream_error_is_reported_not_stopped(client, monkeypatch):
+    from app.services.providers.ollama import OllamaClient
+
+    async def broken(self, model, messages, options=None):
+        yield {"delta": "partial", "thinking": "", "done": False, "stats": None}
+        raise ValueError("bad chunk")
+
+    monkeypatch.setattr(OllamaClient, "chat_stream", broken)
+    pid = client.post("/api/projects", json={"name": "chat-broken"}).json()["id"]
+    events = chat(client, pid, message="hi", model="ollama/chatty:1b")
+    assert events[-1]["type"] == "error" and "ValueError: bad chunk" in events[-1]["message"]
+    conv = client.get(f"/api/projects/{pid}/conversations/{events[0]['conversation']['id']}").json()
+    assert conv["messages"][-1]["content"] == "partial" and conv["messages"][-1]["error"] != "stopped"
