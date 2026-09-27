@@ -97,10 +97,18 @@ async def stream_job(ws: WebSocket, job_id: int) -> None:
             if job is None:
                 await ws.send_json({"type": "error", "message": "job not found"})
                 break
-            if (lines := log_tail.read_new()):
-                await ws.send_json({"type": "log", "lines": lines})
-            if (events := parse_jsonl(metric_tail.read_new())):
-                await ws.send_json({"type": "events", "events": events})
+            if job.status.is_final:
+                # The worker has exited: send everything that's left, not just the next chunk.
+                for lines in log_tail.drain():
+                    await ws.send_json({"type": "log", "lines": lines})
+                for batch in metric_tail.drain():
+                    if (events := parse_jsonl(batch)):
+                        await ws.send_json({"type": "events", "events": events})
+            else:
+                if (lines := log_tail.read_new()):
+                    await ws.send_json({"type": "log", "lines": lines})
+                if (events := parse_jsonl(metric_tail.read_new())):
+                    await ws.send_json({"type": "events", "events": events})
             if job.status != last_status:
                 last_status = job.status
                 await ws.send_json({"type": "status", "job": job.model_dump(mode="json")})
