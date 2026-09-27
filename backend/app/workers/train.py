@@ -43,7 +43,10 @@ def _load_rows(ft: FineTune) -> tuple[list[dict], list[dict]]:
     return train, val
 
 
-def _sft_config(cfg: dict, out_dir: Path, has_eval: bool, bf16: bool):
+WARMUP = 0.05  # share of the steps spent warming up the learning rate
+
+
+def _sft_config(cfg: dict, out_dir: Path, has_eval: bool, bf16: bool, assistant_only: bool = False):
     from trl import SFTConfig
 
     params = inspect.signature(SFTConfig).parameters
@@ -57,7 +60,6 @@ def _sft_config(cfg: dict, out_dir: Path, has_eval: bool, bf16: bool):
         gradient_accumulation_steps=int(cfg["grad_accum"]),
         learning_rate=float(cfg["learning_rate"]),
         lr_scheduler_type="cosine",
-        warmup_ratio=0.05,
         logging_steps=1,
         save_strategy="no",
         report_to=[],
@@ -68,6 +70,15 @@ def _sft_config(cfg: dict, out_dir: Path, has_eval: bool, bf16: bool):
         disable_tqdm=True,  # carriage-return bars garble a log file; Metrics prints clean lines
     )
     kw["eval_strategy" if "eval_strategy" in params else "evaluation_strategy"] = "steps" if has_eval else "no"
+    # transformers 5 dropped warmup_ratio; its warmup_steps takes a float ratio instead.
+    if "warmup_ratio" in params:
+        kw["warmup_ratio"] = WARMUP
+    elif "float" in str(params["warmup_steps"].annotation):
+        kw["warmup_steps"] = WARMUP
+    else:
+        kw["warmup_steps"] = max(1, round(cfg["total_steps"] * WARMUP))
+    if assistant_only:
+        kw["assistant_only_loss"] = True  # dropped below on TRL versions without it
     if has_eval:
         kw["eval_steps"] = eval_every
     # TRL renamed max_seq_length -> max_length.
@@ -75,6 +86,30 @@ def _sft_config(cfg: dict, out_dir: Path, has_eval: bool, bf16: bool):
     if cfg["device"] != "cuda":
         kw["use_cpu" if "use_cpu" in params else "no_cuda"] = True
     return SFTConfig(**{k: v for k, v in kw.items() if k in params})
+
+
+def _assistant_only_supported(tokenizer) -> bool:
+    """TRL's assistant_only_loss needs {% generation %} markers in the chat template; TRL can patch
+    them into some well-known templates. Checked up front, because SFTTrainer only notices after it
+    has already wrapped the model."""
+    from trl import SFTConfig
+
+    if "assistant_only_loss" not in inspect.signature(SFTConfig).parameters:
+        return False
+    try:
+        from trl.chat_template_utils import get_training_chat_template, has_generation_markers
+    except ImportError:
+        return False
+    template = getattr(tokenizer, "chat_template", None)
+    if not isinstance(template, str):
+        return False
+    if has_generation_markers(template):
+        return True
+    try:
+        get_training_chat_template(tokenizer)
+        return True
+    except Exception:
+        return False
 
 
 def _metrics_callback(ctx: JobContext, total_steps: int):
@@ -185,7 +220,6 @@ def main() -> None:
 
     trainer_kw = dict(
         model=model,
-        args=_sft_config(cfg, out_dir, bool(val_rows), bf16),
         train_dataset=Dataset.from_list(train_rows),
         eval_dataset=Dataset.from_list(val_rows) if val_rows else None,
         callbacks=[_metrics_callback(ctx, cfg["total_steps"])],
@@ -194,7 +228,22 @@ def main() -> None:
         trainer_kw["peft_config"] = peft_config
     params = inspect.signature(SFTTrainer.__init__).parameters
     trainer_kw["processing_class" if "processing_class" in params else "tokenizer"] = tokenizer
-    trainer = SFTTrainer(**trainer_kw)
+    # Learn from the answers only, not from reproducing the questions, where TRL and the model's
+    # chat template support it; otherwise train on whole conversations as before.
+    assistant_only = backend == "hf" and _assistant_only_supported(tokenizer)
+    try:
+        trainer = SFTTrainer(args=_sft_config(cfg, out_dir, bool(val_rows), bf16, assistant_only), **trainer_kw)
+    except (ValueError, RuntimeError) as e:
+        if not assistant_only:
+            raise
+        # SFTTrainer may have wrapped the model with LoRA before failing, so start from a fresh copy.
+        print(f"[train] assistant-only loss failed ({str(e)[:200]}); training on whole conversations", flush=True)
+        model, tokenizer, peft_config = _load_hf(cfg, token)
+        trainer_kw.update(model=model, peft_config=peft_config)
+        trainer_kw["processing_class" if "processing_class" in params else "tokenizer"] = tokenizer
+        trainer = SFTTrainer(args=_sft_config(cfg, out_dir, bool(val_rows), bf16), **trainer_kw)
+    print("[train] loss on the assistant's replies only" if getattr(trainer.args, "assistant_only_loss", False)
+          else "[train] loss on whole conversations (this TRL or chat template can't mask the prompts)", flush=True)
     from transformers.trainer_callback import PrinterCallback
     trainer.remove_callback(PrinterCallback)  # prints raw dicts; Metrics already logs each step
 
