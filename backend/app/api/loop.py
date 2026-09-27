@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from ..db import (Dataset, DatasetStatus, EvalRun, FineTune, FineTuneStatus, Job, JobStatus, LearningLoop, LoopRun,
                   Project, engine, get_session, utcnow)
-from ..services import training
+from ..services import notify, training
 from ..services.jobs import AFTER_HOOKS
 from .evals import EvalCreate, Variant, create_eval
 from .projects import get_project_or_404
@@ -70,11 +70,18 @@ def promote(s: Session, ft: FineTune) -> None:
     s.commit()
 
 
+_ALERT = {"promoted": ("New adapter promoted", 3, "tada"), "kept": ("Kept the current adapter", 2, "scales"),
+          "failed": ("Learning loop run failed", 4, "warning")}
+
+
 def _end(s: Session, run: LoopRun, status: str, reason: str) -> LoopRun:
     run.status, run.reason, run.finished_at = status, reason, utcnow()
     s.add(run)
     s.commit()
     s.refresh(run)
+    if status in _ALERT:  # a skipped night isn't news
+        title, priority, tags = _ALERT[status]
+        notify.send("loop", f"{title} · run #{run.id}", reason, priority, tags)
     return run
 
 

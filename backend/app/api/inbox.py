@@ -23,6 +23,7 @@ from sqlmodel import Session, select
 
 from ..config import settings
 from ..db import Document, Project, Source, SourceFile, engine, get_session, utcnow
+from ..services import notify
 from ..services import scan as scanner
 from ..services.parsing import SUPPORTED, ParseError, parse
 from .knowledge import MAX_FILE_BYTES, _safe_name, document_busy, remove_document, store_documents, submit_ingest
@@ -209,13 +210,21 @@ async def poll_source(source_id: int) -> dict:
 
             counts: dict[str, int] = {}
             new_docs: list[int] = []
+            held: list[str] = []
             for f in ready:
                 doc_id = await _process(s, src, f, root)
                 if doc_id:
                     new_docs.append(doc_id)
+                if f.status == "quarantined":
+                    held.append(f.relpath)
                 counts[f.status] = counts.get(f.status, 0) + 1
                 s.add(f)
                 s.commit()
+            if held:
+                more = f" and {len(held) - 5} more" if len(held) > 5 else ""
+                notify.send("review", f"{len(held)} file{'s' if len(held) > 1 else ''} held for review",
+                            f"In “{src.name}”: {', '.join(held[:5])}{more}. They may contain secrets or personal data.",
+                            4, "lock")
             src.last_scan_at, src.last_error = utcnow(), None
             jobs = await _after_added(s, src, new_docs)
             s.add(src)

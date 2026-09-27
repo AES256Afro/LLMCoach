@@ -89,6 +89,16 @@ def fake_app() -> FastAPI:
         body = await req.json()
         return {"data": [{"index": i, "embedding": _vec(t)} for i, t in enumerate(body["input"])]}
 
+    # ---- ntfy ---------------------------------------------------------------------
+    app.state.ntfy = []
+
+    @app.post("/ntfy/{topic}")
+    async def ntfy(topic: str, request: Request):
+        app.state.ntfy.append({"topic": topic, "params": dict(request.query_params),
+                               "auth": request.headers.get("authorization"),
+                               "message": (await request.body()).decode("utf-8")})
+        return {"id": str(len(app.state.ntfy)), "topic": topic}
+
     return app
 
 
