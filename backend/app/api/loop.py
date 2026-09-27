@@ -83,6 +83,9 @@ def start_run(s: Session, project: Project, loop: LearningLoop, trigger: str) ->
     if active:
         raise HTTPException(409, f"run #{active.id} is still {active.status}")
     run = LoopRun(project_id=project.id, trigger=trigger)
+    s.add(run)
+    s.commit()  # its number names the adapter
+    s.refresh(run)
     d = pick_dataset(s, project.id, loop)
     if d is None:
         return _end(s, run, "skipped", "There's nothing to learn from yet. Drop files onto Learn in the chat, "
@@ -101,7 +104,7 @@ def start_run(s: Session, project: Project, loop: LearningLoop, trigger: str) ->
     short = base_model.split("/")[-1]
     try:
         r = create_finetune(project.id, FineTuneCreate(
-            name=f"{short} on {d.name}, {utcnow():%b %d %H:%M}", base_model=base_model, dataset_id=d.id,
+            name=f"{short} on {d.name}, loop run #{run.id}", base_model=base_model, dataset_id=d.id,
             preset=loop.preset), s)
     except HTTPException as e:
         return _end(s, run, "failed", f"Training couldn't start: {e.detail}")

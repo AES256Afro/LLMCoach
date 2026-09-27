@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, Loader2, Play, X } from 'lucide-react'
-import { api, isFinal, type Dataset, type Job, type KBDocument } from '../../api'
+import { AlertTriangle, Check, FolderInput, Loader2, Play, X } from 'lucide-react'
+import { api, isFinal, type Dataset, type Job, type KBDocument, type Source } from '../../api'
 import type { SelectedSource } from './Thread'
 
 const KIND_LABEL: Record<string, string> = { ingest: 'Index files', generate: 'Write Q&A', train: 'Fine-tune', evaluate: 'Compare', smoke: 'Hardware check', demo: 'Demo' }
@@ -34,17 +34,24 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
   const [docs, setDocs] = useState<KBDocument[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [dataset, setDataset] = useState<Dataset | null>(null)
+  const [sources, setSources] = useState<Source[]>([])
+  const [held, setHeld] = useState(0)
 
   useEffect(() => {
     let alive = true
     let timer: number | undefined
     const load = async () => {
       try {
-        const [d, j, ds] = await Promise.all([api.documents(pid), api.jobs({ limit: 6, project_id: pid }), api.datasets(pid)])
+        const [d, j, ds, src, review] = await Promise.all([
+          api.documents(pid), api.jobs({ limit: 6, project_id: pid }), api.datasets(pid),
+          api.sources(pid).catch(() => []), api.reviewQueue(pid).catch(() => []),
+        ])
         if (!alive) return
         setDocs(d)
         setJobs(j)
         setDataset(ds.find((x) => x.source === 'chat') ?? null)
+        setSources(src)
+        setHeld(review.length)
         const moving = j.some((x) => !isFinal(x.status)) || d.some((x) => x.status === 'pending' || x.status === 'ingesting')
         timer = window.setTimeout(load, moving ? 2500 : 10000)
       } catch {
@@ -107,6 +114,27 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
           ))}
         </ul>
         {docs.length > 10 && <Link to="/knowledge" className="block text-xs text-muted hover:text-text">+{docs.length - 10} more in Classic</Link>}
+      </Section>
+
+      <Section title="Inbox" action={<Link to="/inbox" className="hover:text-text">{sources.length ? 'Open' : 'Set up'}</Link>}>
+        {sources.length === 0 ? (
+          <p className="text-xs text-muted">Watch a folder, or a share on the network, and files copied into it join the knowledge base on their own.</p>
+        ) : (
+          <ul className="space-y-1">
+            {sources.map((x) => (
+              <li key={x.id} className="flex items-center gap-2 text-[12.5px]">
+                <FolderInput className={`h-3.5 w-3.5 shrink-0 ${x.enabled && !x.last_error ? 'text-accent' : 'text-muted'}`} />
+                <span className="min-w-0 flex-1 truncate">{x.name}</span>
+                <span className="shrink-0 text-[11px] text-muted">{x.counts.added ?? 0} added{x.mode === 'learn' ? ' · learns' : ''}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {held > 0 && (
+          <Link to="/inbox" className="flex items-center gap-2 rounded-lg bg-warm/10 px-2.5 py-1.5 text-xs text-warm hover:bg-warm/15">
+            <AlertTriangle className="h-3.5 w-3.5" />{held} file{held > 1 ? 's' : ''} held for review
+          </Link>
+        )}
       </Section>
 
       <Section title="Learned in chat" action={dataset && total > 0 ? <button type="button" onClick={() => onCommand('train')} className="inline-flex items-center gap-1 text-accent hover:underline"><Play className="h-3 w-3" />Train</button> : undefined}>

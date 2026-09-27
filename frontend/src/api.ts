@@ -254,7 +254,7 @@ export interface Dataset {
   id: number
   project_id: number
   name: string
-  source: 'upload' | 'generated' | 'chat'
+  source: 'upload' | 'generated' | 'chat' | 'inbox'
   status: 'generating' | 'ready' | 'failed'
   row_count: number
   splits: Record<Split, number> | null
@@ -350,6 +350,7 @@ export interface FineTune {
   error: string | null
   created_at: string
   finished_at: string | null
+  promoted_at: string | null
 }
 
 export interface FineTuneRequest {
@@ -430,6 +431,137 @@ export function errorDetail(detail: unknown): string | undefined {
   }
   if (typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') return detail.message
   return JSON.stringify(detail)
+}
+
+// ---- inbox, tokens and the learning loop --------------------------------------------------------
+
+export type SourceMode = 'remember' | 'learn'
+export type SourceScan = 'all' | 'secrets' | 'off'
+export type FileStatus = 'waiting' | 'added' | 'duplicate' | 'skipped' | 'quarantined' | 'rejected' | 'failed'
+
+export interface Source {
+  id: number
+  project_id: number
+  name: string
+  folder: string
+  path: string
+  mode: SourceMode
+  scan: SourceScan
+  enabled: boolean
+  poll_seconds: number
+  last_scan_at: string | null
+  last_error: string | null
+  created_at: string
+  counts: Partial<Record<FileStatus, number>>
+}
+
+export interface Finding {
+  category: 'secret' | 'personal'
+  kind: string
+  label: string
+  count: number
+  sample: string
+}
+
+export interface SourceFile {
+  id: number
+  source_id: number
+  project_id: number
+  relpath: string
+  size_bytes: number
+  status: FileStatus
+  doc_id: number | null
+  findings: Finding[] | null
+  error: string | null
+  first_seen_at: string
+  processed_at: string | null
+  reviewed_at: string | null
+  source_name?: string | null
+}
+
+export interface InboxInfo {
+  root: string
+  settle_seconds: number
+  supported: string[]
+  max_file_mb: number
+}
+
+export interface PollResult {
+  seen?: number
+  processed?: Partial<Record<FileStatus, number>>
+  waiting?: number
+  ingest_job_id?: number
+  learn_job_id?: number
+  dataset_id?: number
+  error?: string
+  written?: string[]
+  unchanged?: string[]
+}
+
+export interface ApiToken {
+  id: number
+  name: string
+  prefix: string
+  scope: 'inbox' | 'full'
+  created_at: string
+  last_used_at: string | null
+  token?: string // only in the response that created it
+}
+
+export interface LearningLoop {
+  id: number
+  project_id: number
+  enabled: boolean
+  hour_utc: number
+  minute: number
+  dataset_id: number | null
+  base_model: string | null
+  preset: string
+  min_new_rows: number
+  margin: number
+  max_examples: number
+  last_rows: number
+  last_run_at: string | null
+  next_run_at: string | null
+}
+
+export type LoopRunStatus = 'training' | 'evaluating' | 'promoted' | 'kept' | 'skipped' | 'failed'
+
+export interface LoopRun {
+  id: number
+  trigger: 'schedule' | 'manual'
+  status: LoopRunStatus
+  dataset_id: number | null
+  rows: number
+  finetune_id: number | null
+  eval_id: number | null
+  baseline_finetune_id: number | null
+  candidate_f1: number | null
+  baseline_f1: number | null
+  reason: string | null
+  started_at: string
+  finished_at: string | null
+  finetune_name: string | null
+  baseline_name: string | null
+}
+
+export interface RegistryEntry {
+  id: number
+  name: string
+  base_model: string
+  status: FineTune['status']
+  dataset_id: number | null
+  created_at: string
+  promoted_at: string | null
+  train_loss: number | null
+}
+
+export interface LoopState {
+  loop: LearningLoop
+  dataset: { id: number; name: string; rows: number; splits: Record<Split, number> | null; status: string } | null
+  recommended_base_model: string
+  runs: LoopRun[]
+  registry: RegistryEntry[]
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -539,6 +671,45 @@ export const api = {
   updateProject: (id: number, patch: { name?: string; description?: string; settings?: Partial<ProjectSettings> }) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+  inbox: () => request<InboxInfo>('/api/inbox'),
+  sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
+  createSource: (pid: number, body: { name?: string; folder: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
+    request<Source>(`/api/projects/${pid}/sources`, { method: 'POST', body: JSON.stringify(body) }),
+  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds'>>) =>
+    request<Source>(`/api/projects/${pid}/sources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteSource: (pid: number, id: number) => request<void>(`/api/projects/${pid}/sources/${id}`, { method: 'DELETE' }),
+  scanSource: (pid: number, id: number) => request<PollResult>(`/api/projects/${pid}/sources/${id}/scan`, { method: 'POST' }),
+  sourceFiles: (pid: number, id: number, status?: FileStatus) =>
+    request<{ files: SourceFile[]; total: number }>(`/api/projects/${pid}/sources/${id}/files?limit=200${status ? `&status=${status}` : ''}`),
+  reviewQueue: (pid: number) => request<SourceFile[]>(`/api/projects/${pid}/inbox/review`),
+  approveFile: (pid: number, fileId: number) =>
+    request<PollResult & { file: SourceFile }>(`/api/projects/${pid}/inbox/files/${fileId}/approve`, { method: 'POST' }),
+  rejectFile: (pid: number, fileId: number) =>
+    request<SourceFile>(`/api/projects/${pid}/inbox/files/${fileId}/reject`, { method: 'POST' }),
+  tokens: () => request<ApiToken[]>('/api/tokens'),
+  createToken: (name: string, scope: ApiToken['scope']) =>
+    request<ApiToken>('/api/tokens', { method: 'POST', body: JSON.stringify({ name, scope }) }),
+  revokeToken: (id: number) => request<void>(`/api/tokens/${id}`, { method: 'DELETE' }),
+  loop: (pid: number) => request<LoopState>(`/api/projects/${pid}/loop`),
+  updateLoop: (pid: number, patch: Partial<Omit<LearningLoop, 'id' | 'project_id' | 'last_rows' | 'last_run_at' | 'next_run_at'>>) =>
+    request<LoopState>(`/api/projects/${pid}/loop`, { method: 'PUT', body: JSON.stringify(patch) }),
+  runLoop: (pid: number) => request<LoopRun>(`/api/projects/${pid}/loop/run`, { method: 'POST' }),
+  promote: (pid: number, ftId: number) => request<LoopState>(`/api/projects/${pid}/finetunes/${ftId}/promote`, { method: 'POST' }),
+  demote: (pid: number, ftId: number) => request<LoopState>(`/api/projects/${pid}/finetunes/${ftId}/demote`, { method: 'POST' }),
+}
+
+/** Drops files into a watched folder, as if they'd been copied there. */
+export async function uploadToSource(pid: number, sourceId: number, files: File[]): Promise<PollResult> {
+  const form = new FormData()
+  files.forEach((f) => form.append('files', f))
+  const res = await fetch(`/api/projects/${pid}/sources/${sourceId}/upload`, { method: 'POST', body: form })
+  if (res.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = errorDetail((await res.json()).detail) ?? detail } catch { /* not json */ }
+    throw new Error(detail)
+  }
+  return res.json()
 }
 
 /** Streams a chat reply as newline-delimited JSON events. Abort the signal to stop generation. */
