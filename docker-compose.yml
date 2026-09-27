@@ -1,0 +1,24 @@
+# CPU-only (works on BigBox today):   docker compose up -d --build
+# With the NVIDIA GPU installed:      docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+services:
+  llmcoach:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "${LLMCOACH_PORT:-8000}:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      LLMCOACH_OLLAMA_URL: http://ollama:11434
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ./data/ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    restart: unless-stopped

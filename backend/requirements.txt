@@ -1,0 +1,10 @@
+# API layer (installed everywhere, including dev laptops without a GPU)
+fastapi>=0.115
+uvicorn[standard]>=0.32
+sqlmodel>=0.0.22
+pydantic-settings>=2.6
+psutil>=6.1
+python-multipart>=0.0.18
+httpx>=0.28
+pytest>=8.3
+pytest-asyncio>=0.24
