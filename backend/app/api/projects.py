@@ -84,6 +84,8 @@ def delete_project(project_id: int, session: Session = Depends(get_session)) -> 
     from .chat import delete_project_conversations  # avoids circular imports
     from .datasets import delete_project_datasets
     from .evals import delete_project_evals
+    from .inbox import delete_project_sources
+    from .loop import delete_project_loop
     from .training import delete_project_finetunes
     from .knowledge import delete_project_knowledge
 
@@ -91,6 +93,8 @@ def delete_project(project_id: int, session: Session = Depends(get_session)) -> 
     active = session.exec(select(Job).where(Job.project_id == project_id, Job.status.in_([JobStatus.queued, JobStatus.running]))).first()
     if active:
         raise HTTPException(409, f"job #{active.id} is still {active.status.value} for this project; wait for it or cancel it")
+    delete_project_sources(session, project_id)
+    delete_project_loop(session, project_id)
     delete_project_knowledge(session, project_id)
     delete_project_conversations(session, project_id)
     delete_project_evals(session, project_id)  # evals and fine-tunes reference datasets

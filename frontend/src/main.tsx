@@ -10,6 +10,7 @@ import { Datasets } from './pages/Datasets'
 import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
 import { KnowledgeBase } from './pages/KnowledgeBase'
+import { Inbox } from './pages/Inbox'
 import { Logs } from './pages/Logs'
 import { Playground } from './pages/Playground'
 import { Providers } from './pages/Providers'
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: '/logs', element: <Logs /> },
       { path: '/providers', element: <Providers /> },
       { path: '/knowledge', element: <KnowledgeBase /> },
+      { path: '/inbox', element: <Inbox /> },
       { path: '/datasets', element: <Datasets /> },
       { path: '/train', element: <Train /> },
       { path: '/playground', element: <Playground /> },

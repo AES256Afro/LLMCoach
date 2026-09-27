@@ -137,15 +137,27 @@ def delete_document(project_id: int, doc_id: int, session: Session = Depends(get
     doc = session.get(Document, doc_id)
     if doc is None or doc.project_id != project_id:
         raise HTTPException(404, "document not found")
+    if busy := document_busy(session, doc):
+        raise HTTPException(409, busy)
+    remove_document(session, doc)
+
+
+def document_busy(session: Session, doc: Document) -> str | None:
+    """Why a document can't be removed right now, or None."""
     if doc.status == DocStatus.ingesting:
-        raise HTTPException(409, "this document is being ingested; wait for the job or cancel it first")
+        return "this document is being ingested; wait for the job or cancel it first"
     if doc.status == DocStatus.pending:
-        active = session.exec(select(Job).where(Job.kind == "ingest", Job.project_id == project_id,
+        active = session.exec(select(Job).where(Job.kind == "ingest", Job.project_id == doc.project_id,
                                                 Job.status.in_([JobStatus.queued, JobStatus.running])))
-        if any(doc_id in (job.config or {}).get("doc_ids", []) for job in active):
-            raise HTTPException(409, "this document is queued for ingest; wait for the job or cancel it first")
+        if any(doc.id in (job.config or {}).get("doc_ids", []) for job in active):
+            return "this document is queued for ingest; wait for the job or cancel it first"
+    return None
+
+
+def remove_document(session: Session, doc: Document) -> None:
+    """Deletes a document and its passages. Check document_busy() first."""
     # No full-text index rebuild: the deleted rows simply stop matching, and the next ingest rebuilds it.
-    kb.delete_doc(project_id, doc_id)
+    kb.delete_doc(doc.project_id, doc.id)
     if doc.path:
         (settings.data_dir / doc.path).unlink(missing_ok=True)
     session.delete(doc)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,7 +10,7 @@ from sqlmodel import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import chat, datasets, evals, jobs, knowledge, projects, providers, system, training
+from .api import chat, datasets, evals, inbox, jobs, knowledge, loop, projects, providers, system, tokens, training
 from .config import settings
 from .db import engine, init_db
 from .services.device import detect_backend
@@ -33,7 +34,11 @@ async def lifespan(app: FastAPI):
     if auth.auth_enabled() and not settings.session_secret:
         log.warning("LLMCOACH_SESSION_SECRET is not set: everyone is signed out whenever the server restarts")
     await manager.start()
+    watcher = asyncio.create_task(inbox.watch_forever()) if settings.watch else None
+    log.info("inbox: %s%s", settings.inbox_root, "" if watcher else " (watching is off)")
     yield
+    if watcher:
+        watcher.cancel()
     await manager.stop()
 
 
@@ -57,6 +62,9 @@ app.include_router(training.router)
 app.include_router(evals.router)
 app.include_router(jobs.router)
 app.include_router(system.router)
+app.include_router(inbox.router)
+app.include_router(loop.router)
+app.include_router(tokens.router)
 
 
 @app.get("/api/health")

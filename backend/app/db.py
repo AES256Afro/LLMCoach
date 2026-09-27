@@ -122,7 +122,7 @@ class Dataset(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     name: str
-    source: str = "upload"  # "upload" | "generated" | "chat"
+    source: str = "upload"  # "upload" | "generated" | "chat" | "inbox"
     path: str = ""
     status: DatasetStatus = DatasetStatus.ready
     row_count: int = 0
@@ -159,6 +159,9 @@ class FineTune(SQLModel, table=True):
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
+    # The project's current best adapter (at most one per project): the baseline the learning
+    # loop has to beat before a new one replaces it.
+    promoted_at: datetime | None = None
 
 
 class EvalRun(SQLModel, table=True):
@@ -206,6 +209,96 @@ class Message(SQLModel, table=True):
     data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # event card payload
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class Source(SQLModel, table=True):
+    """A folder LLMCoach watches ("an inbox"): files that land in it join the knowledge base.
+
+    `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    name: str
+    folder: str  # relative to inbox_dir; "." is the root itself
+    mode: str = "remember"  # "remember" (index) | "learn" (index, then write practice Q&A)
+    scan: str = "all"  # "all" (secrets and personal data) | "secrets" | "off"
+    enabled: bool = True
+    poll_seconds: int = 60
+    last_scan_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class SourceFile(SQLModel, table=True):
+    """One file a source has seen: the inbox's ledger.
+
+    status: waiting (still being copied, or not looked at yet) | added | duplicate | skipped |
+    quarantined (held for review) | rejected | failed."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_id: int = Field(foreign_key="source.id", index=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    relpath: str
+    size_bytes: int = 0
+    mtime: float = 0
+    sha256: str | None = None
+    status: str = Field(default="waiting", index=True)
+    doc_id: int | None = None
+    findings: list[dict] | None = Field(default=None, sa_column=Column(JSON))
+    error: str | None = None
+    first_seen_at: datetime = Field(default_factory=utcnow)
+    processed_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+
+class ApiToken(SQLModel, table=True):
+    """A bearer token for scripts. Only its hash is stored; the token is shown once."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    prefix: str  # first characters, to tell tokens apart
+    token_hash: str = Field(index=True, unique=True)
+    scope: str = "inbox"  # "inbox" (upload into a source only) | "full"
+    created_at: datetime = Field(default_factory=utcnow)
+    last_used_at: datetime | None = None
+
+
+class LearningLoop(SQLModel, table=True):
+    """A project's nightly retrain: train on a dataset, evaluate against the promoted adapter,
+    and promote the new one only if it scores better."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True, unique=True)
+    enabled: bool = False
+    hour_utc: int = 3
+    minute: int = 0
+    dataset_id: int | None = None  # None = the inbox's or the chat's learned dataset; no FK so datasets stay deletable
+    base_model: str | None = None  # None = the recommended model for this hardware
+    preset: str = "quick"
+    min_new_rows: int = 1  # skip a night when the dataset grew by less than this
+    margin: float = 0.0  # F1 the candidate must gain over the promoted adapter
+    max_examples: int = 20
+    last_rows: int = 0  # dataset size the last completed run trained on
+    last_run_at: datetime | None = None
+    next_run_at: datetime | None = None
+
+
+class LoopRun(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    trigger: str = "schedule"  # "schedule" | "manual"
+    # training | evaluating | promoted | kept | skipped | failed
+    status: str = "training"
+    dataset_id: int | None = None
+    rows: int = 0
+    finetune_id: int | None = None
+    eval_id: int | None = None
+    baseline_finetune_id: int | None = None
+    candidate_f1: float | None = None
+    baseline_f1: float | None = None
+    reason: str | None = None
+    started_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
 
 
 engine = create_engine(
