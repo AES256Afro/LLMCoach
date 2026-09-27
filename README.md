@@ -4,6 +4,11 @@ A self-hosted workbench for making small LLMs good at specific tasks. It covers 
 
 It runs on **BigBox** as a BoxPilot app and uses BoxPilot's Ollama for inference. It's CPU-only today and uses an NVIDIA GPU (RTX 4080) once one is installed.
 
+LLMCoach has **studios**: different front ends over the same projects, for people who work differently. Pick one from the switcher in the corner; LLMCoach remembers your choice. The plan and status of all of them is in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+- **Chat** (the default): a chat that learns. Drop files anywhere onto *Remember* or *Learn*, ask with cited answers, and run `/train`, `/compare` or `/logs` without leaving the conversation.
+- **Classic**: every page and setting in one dashboard (below).
+
 ## What it does
 
 The typical loop: put your documents in the **Knowledge Base**, chat with them in the **Playground**, **generate a dataset** of Q&A pairs from them, **fine-tune** a small model on it, then **compare** the base model, the base model with the knowledge base, and your fine-tune on held-out questions.
@@ -15,6 +20,7 @@ The typical loop: put your documents in the **Knowledge Base**, chat with them i
 | **Datasets** | Import JSONL, JSON or CSV (chat, Alpaca, prompt/completion, question/answer, ShareGPT), with row-level validation and a seeded train/val/test split. You can also **generate Q&A pairs from the knowledge base** with any chat model. |
 | **Train** | LoRA / QLoRA fine-tuning with Quick/Balanced/Thorough presets and a **memory estimate against your hardware** before launch, plus live loss, eval-loss and learning-rate charts. It uses **Unsloth** on an NVIDIA GPU and **TRL + PEFT** elsewhere (CPU included, for models under 1B). |
 | **Compare** | Run a test split through up to six variants: models, fine-tunes, each with or without the knowledge base. Scores are exact match, F1 and ROUGE-L, plus an optional **LLM judge** (1–5 with reasons), shown side by side with overlap highlighting. |
+| **Inbox** | Watched folders: files copied into a folder (or a share on the network) join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
 | **Providers** | Ollama (default) plus any OpenAI-compatible server, with presets for **llama.cpp, vLLM, SGLang, LocalAI and Text Embeddings Inference**. Models are named `provider/model`, so tasks can mix them. |
 | **Jobs / Logs** | Everything heavy runs as a queued job in its own process, with live logs, progress, charts and cancel. |
 
@@ -30,6 +36,8 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | 3 | Datasets (import + generation), LoRA/QLoRA training | ✅ |
 | 4 | Eval + Compare | ✅ |
 | 5 | Export fine-tunes to GGUF / Ollama; vLLM live adapter loading; Axolotl (DPO/ORPO) | ⏳ |
+| L0–L1 | Studios framework and the Chat studio | ✅ 0.3.0 |
+| L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0 (buckets and export to Ollama still to come) |
 
 ## Local development
 
@@ -60,6 +68,8 @@ LLMCoach is a [BoxPilot](https://github.com/AES256Afro/BoxPilot) catalog app:
 2. Install **LLMCoach** from the catalog. BoxPilot generates the owner password and shows it in the app's **Sign in** panel. It also handles LAN/Tailscale reach with HTTPS, updates, backups and logs.
 3. Open LLMCoach. The dashboard's **Ollama** card should say *connected* and list your models.
 
+**The inbox.** BoxPilot mounts the app's `inbox` volume at `/inbox` (`LLMCOACH_INBOX_DIR`). Share that folder from BoxPilot over SMB, then point a watched folder in LLMCoach (*Inbox* page) at a folder inside it, and anything copied onto the share is picked up.
+
 LLMCoach reaches BoxPilot's Ollama at `http://host.docker.internal:11434`. That works while Ollama's reach is **LAN**. If you make Ollama Tailscale-only, set *Where Ollama is* in LLMCoach's settings to Ollama's tailnet address.
 
 ### Releasing
@@ -77,7 +87,7 @@ docker compose up -d --build
 
 1. Power: the card takes a 16-pin 12VHPWR / 12V-2x6 plug. Use a native cable from an ATX 3.x PSU, or the 3× 8-pin adapter that came with the card, with three *separate* PSU cables. Seat it fully. An 850W+ PSU is recommended.
 2. Install the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then check with `nvidia-smi`.
-3. BoxPilot doesn't pass NVIDIA GPUs to apps yet (planned). Until it does, run standalone with `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build`.
+3. BoxPilot (1.119.0 and later) passes the GPU to apps that ask for one, which Ollama does, so inference moves to the card straight away. LLMCoach's own image is CPU-only for now; to train on the GPU, run it standalone with `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` until a CUDA image ships.
 4. Run **Smoke test + LoRA** from the Jobs page.
 
 ## Layout
@@ -86,11 +96,18 @@ docker compose up -d --build
 backend/app/
   main.py              FastAPI app; also serves the built UI
   auth.py              single-owner sign-in (signed cookie; off when no password is set)
-  api/                 REST + WebSocket routes (jobs, projects, system, ollama)
+  api/                 REST + WebSocket routes (jobs, projects, knowledge, chat, datasets, training, evals, ...)
+  api/inbox.py         watched folders: the poller, ledger and review queue
+  api/loop.py          the learning loop: train -> evaluate -> promote, chained by an after-job hook
+  api/tokens.py        API tokens for scripts (hash stored; "inbox" scope can only upload)
+  services/scan.py     secret and personal-data checks for incoming files
   services/jobs.py     single-GPU queue; each job = python -m app.workers.<kind>
   services/device.py   CPU / nvidia-smi / rocm-smi detection and stats
   workers/             job processes; write log.txt + metrics.jsonl in data/runs/<id>/
 frontend/src/          React + Vite + Tailwind + Recharts
+  studios/registry.ts  the studios, and which one each person last used
+  studios/chat/        the Chat studio (lazy-loaded; restyles shared parts via the .studio-chat CSS scope)
+  pages/               the Classic studio's pages
 scripts/smoke_gpu.py   hardware check
 ```
 

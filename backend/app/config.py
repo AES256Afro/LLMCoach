@@ -23,13 +23,24 @@ class Settings(BaseSettings):
     def db_path(self) -> Path:
         return self.data_dir / "llmcoach.db"
 
+    # Where watched folders live. BoxPilot mounts the app's "inbox" volume here, and can share that
+    # folder over SMB so other machines drop files into it. Defaults to data/inbox.
+    inbox_dir: Path | None = None
+    # Poll watched folders and run the nightly learning loop in the background (off in tests).
+    watch: bool = True
+
     @property
     def runs_dir(self) -> Path:
         return self.data_dir / "runs"
 
+    @property
+    def inbox_root(self) -> Path:
+        return (self.inbox_dir or self.data_dir / "inbox").resolve()
+
     def ensure_dirs(self) -> None:
         for sub in ("docs", "lancedb", "datasets", "runs", "models"):
             (self.data_dir / sub).mkdir(parents=True, exist_ok=True)
+        self.inbox_root.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

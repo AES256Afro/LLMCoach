@@ -67,6 +67,25 @@ def _cookie_from_scope(scope) -> str | None:
     return None
 
 
+def _bearer_from_scope(scope) -> str | None:
+    for name, value in scope.get("headers", []):
+        if name == b"authorization":
+            kind, _, token = value.decode("latin-1").partition(" ")
+            if kind.lower() == "bearer" and token.strip():
+                return token.strip()
+    return None
+
+
+async def _bearer_allows(scope) -> bool:
+    """API tokens (see api/tokens.py) for plain HTTP requests from scripts."""
+    token = _bearer_from_scope(scope) if scope["type"] == "http" else None
+    if not token:
+        return False
+    from .api.tokens import check_bearer  # the token table lives with the rest of the models
+
+    return await asyncio.to_thread(check_bearer, token, scope.get("method", "GET"), scope["path"])
+
+
 class AuthMiddleware:
     """Pure ASGI so it covers WebSockets as well as HTTP."""
 
@@ -79,7 +98,7 @@ class AuthMiddleware:
         path = scope["path"]
         protected = ((path.startswith("/api/") or path.startswith("/ws/")) and path not in PUBLIC_PATHS
                      or path in DOCS_PATHS)
-        if not protected or verify_token(_cookie_from_scope(scope)):
+        if not protected or verify_token(_cookie_from_scope(scope)) or await _bearer_allows(scope):
             return await self.app(scope, receive, send)
 
         if scope["type"] == "websocket":
