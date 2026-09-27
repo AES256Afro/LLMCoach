@@ -14,7 +14,8 @@ FROM ${BASE_IMAGE}
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 ARG CUDA_EXTRAS=0
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
-    LLMCOACH_DATA_DIR=/data HF_HOME=/data/hf-cache \n    LLMCOACH_OLLAMA_URL=http://host.docker.internal:11434
+    LLMCOACH_DATA_DIR=/data HF_HOME=/data/hf-cache \
+    LLMCOACH_OLLAMA_URL=http://host.docker.internal:11434
 
 RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
 
