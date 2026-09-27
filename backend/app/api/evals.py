@@ -64,6 +64,8 @@ def create_eval(project_id: int, body: EvalCreate, session: Session = Depends(ge
         raise HTTPException(400, "compare between 1 and 6 variants")
     if not 1 <= body.max_examples <= 1000:
         raise HTTPException(400, "max_examples must be 1-1000")
+    if body.split not in ("test", "val", "train"):
+        raise HTTPException(400, "split must be 'test', 'val' or 'train'")
     variants, labels = [], set()
     for v in body.variants:
         if v.kind == "model":

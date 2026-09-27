@@ -5,9 +5,21 @@ This is how a fine-tune is evaluated right after training, before any export to 
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from ..config import settings
+
+_THINK = re.compile(r"<think>.*?</think>", re.S)
+
+
+def strip_thinking(text: str) -> str:
+    """Drops a reasoning model's <think>...</think> block (and one cut off by max_new_tokens):
+    only the answer should be scored."""
+    text = _THINK.sub("", text)
+    if "<think>" in text:
+        text = text[:text.index("<think>")]
+    return text.strip()
 
 
 class LocalModel:
@@ -30,13 +42,18 @@ class LocalModel:
 
     def generate(self, messages: list[dict], max_new_tokens: int = 256) -> dict:
         started = time.perf_counter()
-        inputs = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt",
-                                                    return_dict=True).to(self.model.device)
+        kw = dict(add_generation_prompt=True, return_tensors="pt", return_dict=True)
+        try:
+            # Qwen3's template thinks by default; the reasoning would be scored as part of the answer.
+            inputs = self.tokenizer.apply_chat_template(messages, enable_thinking=False, **kw)
+        except TypeError:  # older tokenizers without template kwargs
+            inputs = self.tokenizer.apply_chat_template(messages, **kw)
+        inputs = inputs.to(self.model.device)
         with self.torch.no_grad():
             out = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False,
                                       pad_token_id=self.tokenizer.pad_token_id)
         new = out[0][inputs["input_ids"].shape[1]:]
-        text = self.tokenizer.decode(new, skip_special_tokens=True).strip()
+        text = strip_thinking(self.tokenizer.decode(new, skip_special_tokens=True))
         seconds = time.perf_counter() - started
         return {"content": text, "stats": {"completion_tokens": len(new), "total_ms": round(seconds * 1000),
                                            "tokens_per_sec": round(len(new) / seconds, 1) if seconds else None}}
