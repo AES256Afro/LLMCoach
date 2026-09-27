@@ -6,5 +6,11 @@ pydantic-settings>=2.6
 psutil>=6.1
 python-multipart>=0.0.18
 httpx>=0.28
+# Knowledge base (read by the API, written by ingest jobs)
+lancedb>=0.17
+pyarrow>=17
+pypdf>=5.1
+python-docx>=1.1
+beautifulsoup4>=4.12
 pytest>=8.3
 pytest-asyncio>=0.24

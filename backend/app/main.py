@@ -9,7 +9,7 @@ from sqlmodel import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import jobs, projects, providers, system
+from .api import jobs, knowledge, projects, providers, system
 from .config import settings
 from .db import engine, init_db
 from .services.device import detect_backend
@@ -46,6 +46,7 @@ app.add_middleware(auth.AuthMiddleware)
 app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(providers.router)
+app.include_router(knowledge.router)
 app.include_router(jobs.router)
 app.include_router(system.router)
 

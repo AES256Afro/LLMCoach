@@ -19,6 +19,7 @@ export interface ProjectSettings {
   chunk_overlap: number
   chat_model: string | null
   top_k: number
+  search_mode: 'hybrid' | 'vector'
 }
 
 export interface Project {
@@ -124,6 +125,55 @@ export interface AuthState {
 /** Fired when any request comes back 401 so the app can show the sign-in screen. */
 export const AUTH_REQUIRED_EVENT = 'llmcoach:auth-required'
 
+export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed'
+
+export interface KBDocument {
+  id: number
+  project_id: number
+  filename: string
+  size_bytes: number
+  status: DocStatus
+  chunk_count: number
+  char_count: number
+  embed_model: string | null
+  error: string | null
+  created_at: string
+  ingested_at: string | null
+}
+
+export interface KnowledgeStats {
+  documents: number
+  by_status: Record<DocStatus, number>
+  chunks: number
+  dimension: number | null
+  embed_model: string
+  stale_doc_ids: number[]
+  bytes: number
+}
+
+export interface SearchHit {
+  id: string
+  doc_id: number
+  filename: string
+  chunk_index: number
+  page: number | null
+  text: string
+  score: number
+}
+
+export interface Chunk {
+  id: string
+  chunk_index: number
+  page: number | null
+  text: string
+}
+
+export interface UploadResult {
+  documents: KBDocument[]
+  skipped: { filename: string; reason: string }[]
+  job: Job | null
+}
+
 export const isFinal = (s: JobStatus) => s === 'done' || s === 'failed' || s === 'cancelled'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -162,6 +212,17 @@ export const api = {
   deleteProvider: (id: number) => request<void>(`/api/providers/${id}`, { method: 'DELETE' }),
   testProvider: (body: { preset: string; base_url: string; api_key?: string }) =>
     request<ReachStatus>('/api/providers/test', { method: 'POST', body: JSON.stringify(body) }),
+  documents: (pid: number) => request<KBDocument[]>(`/api/projects/${pid}/documents`),
+  knowledge: (pid: number) => request<KnowledgeStats>(`/api/projects/${pid}/knowledge`),
+  deleteDocument: (pid: number, id: number) => request<void>(`/api/projects/${pid}/documents/${id}`, { method: 'DELETE' }),
+  reindex: (pid: number, doc_ids?: number[]) =>
+    request<Job>(`/api/projects/${pid}/documents/reindex`, { method: 'POST', body: JSON.stringify({ doc_ids: doc_ids ?? null }) }),
+  chunks: (pid: number, docId: number, offset = 0, limit = 50) =>
+    request<{ chunks: Chunk[]; total: number }>(`/api/projects/${pid}/documents/${docId}/chunks?offset=${offset}&limit=${limit}`),
+  search: (pid: number, query: string, top_k?: number) =>
+    request<{ results: SearchHit[]; mode: 'hybrid' | 'vector'; embed_ms: number; total_ms: number }>(`/api/projects/${pid}/search`, {
+      method: 'POST', body: JSON.stringify({ query, top_k }),
+    }),
   models: (capability?: 'chat' | 'embeddings') =>
     request<ModelRef[]>(`/api/models${capability ? `?capability=${capability}` : ''}`),
   system: () => request<SystemStats>('/api/system'),
@@ -182,6 +243,28 @@ export const api = {
   updateProject: (id: number, patch: { name?: string; description?: string; settings?: Partial<ProjectSettings> }) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+}
+
+/** Multipart upload with progress (fetch can't report upload progress). */
+export function uploadDocuments(pid: number, files: File[], onProgress: (fraction: number) => void): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    for (const f of files) form.append('files', f, f.name)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/projects/${pid}/documents`)
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)
+    xhr.onload = () => {
+      if (xhr.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+      else {
+        let detail = xhr.statusText
+        try { detail = JSON.parse(xhr.responseText).detail ?? detail } catch { /* not json */ }
+        reject(new Error(`${xhr.status}: ${detail}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('upload failed: network error'))
+    xhr.send(form)
+  })
 }
 
 export function wsUrl(path: string): string {

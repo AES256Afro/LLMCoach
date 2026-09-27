@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from ..db import DEFAULT_PROJECT_SETTINGS, Project, get_session
+from ..db import DEFAULT_PROJECT_SETTINGS, Job, JobStatus, Project, get_session
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -81,6 +81,15 @@ def update_project(project_id: int, body: ProjectUpdate, session: Session = Depe
 
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: int, session: Session = Depends(get_session)) -> None:
+    from .knowledge import delete_project_knowledge  # avoids a circular import
+
     p = get_project_or_404(session, project_id)
+    active = session.exec(select(Job).where(Job.project_id == project_id, Job.status.in_([JobStatus.queued, JobStatus.running]))).first()
+    if active:
+        raise HTTPException(409, f"job #{active.id} is still {active.status.value} for this project; wait for it or cancel it")
+    delete_project_knowledge(session, project_id)
+    for job in session.exec(select(Job).where(Job.project_id == project_id)):
+        job.project_id = None  # keep the job history
+        session.add(job)
     session.delete(p)
     session.commit()
