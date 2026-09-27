@@ -398,6 +398,27 @@ export interface EvalRun {
 
 export const isFinal = (s: JobStatus) => s === 'done' || s === 'failed' || s === 'cancelled'
 
+/**
+ * FastAPI's `detail` as readable text: a string, {message, errors} (our validation errors), or
+ * a list of {loc, msg} (request validation, 422). Anything else is shown as JSON.
+ */
+export function errorDetail(detail: unknown): string | undefined {
+  if (detail == null) return undefined
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => {
+      if (d && typeof d === 'object' && 'msg' in d) {
+        const loc = Array.isArray(d.loc) ? d.loc.filter((p: unknown) => p !== 'body').join('.') : ''
+        return loc ? `${loc}: ${d.msg}` : String(d.msg)
+      }
+      return typeof d === 'string' ? d : JSON.stringify(d)
+    })
+    return msgs.join('; ')
+  }
+  if (typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') return detail.message
+  return JSON.stringify(detail)
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -409,7 +430,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText
     try {
-      detail = (await res.json()).detail ?? detail
+      detail = errorDetail((await res.json()).detail) ?? detail
     } catch {
       /* not json */
     }
@@ -506,7 +527,7 @@ export async function streamChat(pid: number, body: ChatRequest, onEvent: (e: Ch
   if (res.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
   if (!res.ok || !res.body) {
     let detail = res.statusText
-    try { detail = (await res.json()).detail ?? detail } catch { /* not json */ }
+    try { detail = errorDetail((await res.json()).detail) ?? detail } catch { /* not json */ }
     throw new Error(detail)
   }
   const reader = res.body.getReader()
@@ -543,8 +564,8 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     const d = body.detail
-    const err = new Error(typeof d === 'string' ? d : d?.message ?? res.statusText) as Error & { lines?: { line: number; error: string }[] }
-    err.lines = typeof d === 'object' ? d?.errors : undefined
+    const err = new Error(errorDetail(d) ?? res.statusText) as Error & { lines?: { line: number; error: string }[] }
+    err.lines = d && typeof d === 'object' && !Array.isArray(d) ? d.errors : undefined
     throw err
   }
   return body
@@ -563,7 +584,7 @@ export function uploadDocuments(pid: number, files: File[], onProgress: (fractio
       if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
       else {
         let detail = xhr.statusText
-        try { detail = JSON.parse(xhr.responseText).detail ?? detail } catch { /* not json */ }
+        try { detail = errorDetail(JSON.parse(xhr.responseText).detail) ?? detail } catch { /* not json */ }
         reject(new Error(`${xhr.status}: ${detail}`))
       }
     }

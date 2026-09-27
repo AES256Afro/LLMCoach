@@ -29,16 +29,29 @@ export function Playground() {
   const [system, setSystem] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [pending, setPending] = useState<Pending | null>(null)
+  const [streaming, setStreaming] = useState(false)
   const [kbChunks, setKbChunks] = useState(0)
   const abort = useRef<AbortController | null>(null)
+  // Bumped whenever the view moves on (send, open, new chat, project switch). A request that
+  // finishes after that must not touch the screen: it belongs to a chat that's no longer shown.
+  const view = useRef(0)
+
+  /** Stops (or forgets) any reply being streamed and invalidates in-flight requests. */
+  const leave = () => {
+    view.current++
+    abort.current?.abort()
+    abort.current = null
+    setStreaming(false)
+    setPending(null)
+  }
 
   const loadList = useCallback(async () => {
     if (pid != null) setConversations(await api.conversations(pid))
   }, [pid])
 
   useEffect(() => {
+    leave()
     setActive(null)
-    setPending(null)
     loadList().catch(() => {})
     if (pid != null) api.knowledge(pid).then((k) => setKbChunks(k.chunks)).catch(() => {})
   }, [pid, loadList])
@@ -52,28 +65,32 @@ export function Playground() {
 
   const open = async (id: number) => {
     if (pid == null) return
+    leave()
+    const my = view.current
     const c = await api.conversation(pid, id)
+    if (view.current !== my) return
     setActive(c)
-    setPending(null)
     setModel(c.model)
     setUseRag(c.use_rag)
     setSystem(c.system_prompt ?? '')
   }
 
   const newChat = () => {
-    abort.current?.abort()
+    leave()
     setActive(null)
-    setPending(null)
     setSystem(project?.settings.system_prompt ?? '')
   }
 
   const send = async (question: string) => {
-    if (pid == null || !question.trim() || pending) return
+    if (pid == null || !question.trim() || streaming) return
+    const my = ++view.current
     const controller = new AbortController()
     abort.current = controller
     const p: Pending = { question, answer: '', thinking: '', sources: null, model, error: null }
     setPending(p)
+    setStreaming(true)
     let convId = active?.id
+    const expected = (active?.messages?.length ?? 0) + 2 // the question and the reply, once saved
     try {
       await streamChat(pid, {
         message: question,
@@ -84,6 +101,7 @@ export function Playground() {
         temperature,
         think,
       }, (e) => {
+        if (view.current !== my) return
         if (e.type === 'meta') {
           convId = e.conversation.id
           p.sources = e.sources
@@ -95,21 +113,41 @@ export function Playground() {
         setPending({ ...p })
       }, controller.signal)
     } catch (err) {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && view.current === my) {
+        // Failed before or while streaming (e.g. 409 no model, 502 provider down): show it, and
+        // leave Send usable.
         p.error = err instanceof Error ? err.message : String(err)
         setPending({ ...p })
+        setStreaming(false)
+        abort.current = null
         return
       }
     }
+    if (view.current !== my) return // the user moved to another chat or project meanwhile
     abort.current = null
-    if (convId != null) {
-      // The server saved both messages (a stopped reply is kept with what it had).
-      window.setTimeout(async () => {
-        const c = await api.conversation(pid, convId!)
-        setActive(c)
-        setPending(null)
-        loadList()
-      }, controller.signal.aborted ? 300 : 0)
+    setStreaming(false)
+    if (controller.signal.aborted) {
+      p.error = p.error ?? 'stopped'
+      setPending({ ...p })
+    }
+    if (convId == null) return
+    // The server saves both messages (a stopped reply is kept with what it had). Keep the pending
+    // bubble until the saved copy is there, so a stopped reply doesn't blink out and back.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const c = await api.conversation(pid, convId)
+        if (view.current !== my) return
+        if ((c.messages?.length ?? 0) >= expected || attempt === 19) {
+          setActive(c)
+          setPending(null)
+          loadList().catch(() => {})
+          return
+        }
+      } catch {
+        if (view.current !== my) return
+      }
+      await new Promise((r) => window.setTimeout(r, 250))
+      if (view.current !== my) return
     }
   }
 
@@ -122,10 +160,9 @@ export function Playground() {
 
   if (!project) return <div className="text-sm text-muted">Loading project…</div>
   const messages = active?.messages ?? []
-  const streaming = pending != null && !pending.error && abort.current != null
 
   return (
-    <div className="-mx-4 -my-5 flex h-[calc(100vh-49px)] md:-m-6 md:h-screen">
+    <div className="-mx-4 -my-5 flex h-[calc(100dvh-49px)] md:-m-6 md:h-dvh">
       {/* conversation list */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel/50 lg:flex">
         <div className="p-3"><Button className="w-full" onClick={newChat}>New chat</Button></div>
@@ -144,7 +181,20 @@ export function Playground() {
       <section className="flex min-w-0 flex-1 flex-col">
         {/* toolbar */}
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
-          <button onClick={newChat} className="rounded border border-line px-2 py-1 text-xs text-muted hover:text-text lg:hidden">New</button>
+          {/* below lg the sidebar is hidden: pick conversations here */}
+          <div className="flex items-center gap-1 lg:hidden">
+            <button onClick={newChat} className="rounded border border-line px-2 py-1 text-xs text-muted hover:text-text">New</button>
+            <select value={active?.id ?? ''} aria-label="Conversation"
+                    onChange={(e) => (e.target.value ? open(Number(e.target.value)) : newChat())}
+                    className="max-w-[10rem] rounded border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent">
+              <option value="">{conversations.length ? 'New chat' : 'No conversations yet'}</option>
+              {conversations.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+            {active && (
+              <button onClick={() => remove(active)} title="Delete this conversation"
+                      className="rounded px-1.5 py-1 text-sm text-muted hover:text-bad">×</button>
+            )}
+          </div>
           <ModelSelect capability="chat" value={model} onChange={setModel} allowDefault="Default model" className="max-w-[16rem]" />
           <label className={`flex items-center gap-1.5 text-sm ${kbChunks ? '' : 'opacity-50'}`}
                  title={kbChunks ? 'Answer from the knowledge base' : 'The knowledge base is empty'}>
@@ -180,7 +230,7 @@ export function Playground() {
         )}
 
         {/* transcript */}
-        <Transcript messages={messages} pending={pending} kbEmpty={!kbChunks} onSuggest={send} />
+        <Transcript messages={messages} pending={pending} live={streaming} kbEmpty={!kbChunks} onSuggest={send} />
 
         {/* composer */}
         <Composer disabled={streaming} onSend={send} onStop={() => abort.current?.abort()} streaming={streaming} />
@@ -189,8 +239,8 @@ export function Playground() {
   )
 }
 
-function Transcript({ messages, pending, kbEmpty, onSuggest }: {
-  messages: ChatMessage[]; pending: Pending | null; kbEmpty: boolean; onSuggest: (q: string) => void
+function Transcript({ messages, pending, live, kbEmpty, onSuggest }: {
+  messages: ChatMessage[]; pending: Pending | null; live: boolean; kbEmpty: boolean; onSuggest: (q: string) => void
 }) {
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -225,7 +275,7 @@ function Transcript({ messages, pending, kbEmpty, onSuggest }: {
           <>
             <UserBubble text={pending.question} />
             <AssistantMessage content={pending.answer} thinking={pending.thinking} sources={pending.sources}
-                              model={pending.model} stats={null} error={pending.error} live={!pending.error} />
+                              model={pending.model} stats={null} error={pending.error} live={live && !pending.error} />
           </>
         )}
         <div ref={end} />
