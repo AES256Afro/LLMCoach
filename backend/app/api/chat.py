@@ -3,7 +3,7 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -11,7 +11,8 @@ from sqlmodel import Session, select
 from ..db import Conversation, Message, engine, get_session, utcnow
 from ..services import kb, rag
 from ..services.providers import ProviderError, client_for, list_providers, resolve
-from .knowledge import retrieve
+from .datasets import learn_into_chat_dataset
+from .knowledge import MAX_FILE_BYTES, retrieve, store_documents, submit_ingest
 from .projects import get_project_or_404
 
 log = logging.getLogger(__name__)
@@ -86,6 +87,143 @@ def delete_conversation(project_id: int, conversation_id: int, session: Session 
     session.flush()  # children first: there are no ORM relationships to order the deletes
     session.delete(c)
     session.commit()
+
+
+class ConversationCreate(BaseModel):
+    title: str | None = None
+
+
+@router.post("/conversations", status_code=201)
+def create_conversation(project_id: int, body: ConversationCreate, session: Session = Depends(get_session)) -> dict:
+    """An empty conversation, for when the first thing someone does is a command or a file drop."""
+    project = get_project_or_404(session, project_id)
+    c = Conversation(project_id=project_id, title=(body.title or "New chat")[:120],
+                     system_prompt=project.effective_settings().get("system_prompt"))
+    session.add(c)
+    session.commit()
+    session.refresh(c)
+    return _conv_out(c, [])
+
+
+class EventCreate(BaseModel):
+    text: str
+    data: dict = {}
+
+
+def add_event(session: Session, conv: Conversation, text: str, data: dict) -> Message:
+    """A card in the thread (files added, a run started, results). Never sent to the model."""
+    msg = Message(conversation_id=conv.id, role="event", content=text, data=data)
+    conv.updated_at = utcnow()
+    session.add(conv)
+    session.add(msg)
+    session.commit()
+    session.refresh(msg)
+    return msg
+
+
+@router.post("/conversations/{conversation_id}/events", status_code=201)
+def create_event(project_id: int, conversation_id: int, body: EventCreate,
+                 session: Session = Depends(get_session)) -> Message:
+    if not body.text.strip():
+        raise HTTPException(400, "event text is empty")
+    if not isinstance(body.data.get("card"), str):
+        raise HTTPException(400, "event data needs a 'card' type")
+    return add_event(session, _conv(session, project_id, conversation_id), body.text.strip()[:2000], body.data)
+
+
+def _files_phrase(n: int) -> str:
+    return "1 file" if n == 1 else f"{n} files"
+
+
+@router.post("/chat/attach", status_code=201)
+async def attach(project_id: int, mode: str = Form("remember"), conversation_id: int | None = Form(None),
+                 text: str = Form(""), title: str = Form(""), model: str | None = Form(None),
+                 files: list[UploadFile] | None = File(None), session: Session = Depends(get_session)) -> dict:
+    """Files dropped (or text pasted) into a chat.
+
+    remember: add to the knowledge base, so answers can cite them within a minute.
+    learn:    also write Q&A pairs from them into the "Learned in chat" dataset, for fine-tuning.
+    Returns the event card added to the conversation (created if needed)."""
+    project = get_project_or_404(session, project_id)
+    if mode not in ("remember", "learn"):
+        raise HTTPException(400, "mode must be 'remember' or 'learn'")
+    items = [(f.filename or "file", await f.read(MAX_FILE_BYTES + 1)) for f in files or []]
+    if text.strip():
+        name = (title.strip() or f"Note {utcnow():%Y-%m-%d %H%M}")[:80]
+        items.append((name if name.lower().endswith((".md", ".txt")) else f"{name}.md", text.encode("utf-8")))
+    if not items:
+        raise HTTPException(400, "nothing to add: drop a file or paste some text")
+
+    if conversation_id is not None:
+        conv = _conv(session, project_id, conversation_id)
+    else:
+        conv = Conversation(project_id=project_id, system_prompt=project.effective_settings().get("system_prompt"))
+        session.add(conv)
+        session.commit()
+        session.refresh(conv)
+
+    added, skipped = await store_documents(session, project_id, items)
+    ingest = submit_ingest(session, project, [d.id for d in added]) if added else None
+    # Learning also covers files that were already in the knowledge base.
+    learn_ids = [d.id for d in added] + [s["doc_id"] for s in skipped if s.get("doc_id")]
+    learn = None
+    if mode == "learn" and learn_ids:
+        cfg = project.effective_settings()
+        model_ref = model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+        dataset, job = learn_into_chat_dataset(session, project, model_ref, learn_ids,
+                                               max_chunks=min(40, 8 * len(learn_ids)))
+        learn = {"dataset_id": dataset.id, "dataset_name": dataset.name, "job_id": job.id, "model": model_ref}
+
+    if added and learn:
+        summary = f"Added {_files_phrase(len(added))} to the knowledge base and started learning from them"
+    elif added:
+        summary = f"Added {_files_phrase(len(added))} to the knowledge base"
+    elif learn:
+        summary = f"Learning from {_files_phrase(len(learn_ids))} already in the knowledge base"
+    else:
+        summary = "Nothing new was added"
+    if conv.title == "New chat":
+        conv.title = summary[:60]
+    data = {
+        "card": "attach", "mode": mode,
+        "documents": [{"id": d.id, "filename": d.filename, "size_bytes": d.size_bytes} for d in added],
+        "skipped": skipped, "ingest_job_id": ingest.id if ingest else None, "learn": learn,
+    }
+    msg = add_event(session, conv, summary, data)
+    session.refresh(conv)
+    return {"conversation": _conv_out(conv), "message": msg}
+
+
+class LearnRequest(BaseModel):
+    conversation_id: int | None = None
+    model: str | None = None
+    max_chunks: int = 20
+
+
+@router.post("/chat/learn", status_code=201)
+async def learn_from_knowledge(project_id: int, body: LearnRequest, session: Session = Depends(get_session)) -> dict:
+    """/learn: write Q&A pairs from the whole knowledge base into "Learned in chat"."""
+    project = get_project_or_404(session, project_id)
+    if await asyncio.to_thread(kb.count, project_id) == 0:
+        raise HTTPException(400, "the knowledge base is empty: drop some files into the chat first")
+    if not 1 <= body.max_chunks <= 500:
+        raise HTTPException(400, "max_chunks must be 1-500")
+    if body.conversation_id is not None:
+        conv = _conv(session, project_id, body.conversation_id)
+    else:
+        conv = Conversation(project_id=project_id, title="Learning from the knowledge base",
+                            system_prompt=project.effective_settings().get("system_prompt"))
+        session.add(conv)
+        session.commit()
+        session.refresh(conv)
+    cfg = project.effective_settings()
+    model_ref = body.model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+    dataset, job = learn_into_chat_dataset(session, project, model_ref, None, max_chunks=body.max_chunks)
+    msg = add_event(session, conv, f"Writing Q&A pairs from up to {body.max_chunks} passages into “{dataset.name}”",
+                    {"card": "learn", "learn": {"dataset_id": dataset.id, "dataset_name": dataset.name,
+                                                "job_id": job.id, "model": model_ref}})
+    session.refresh(conv)
+    return {"conversation": _conv_out(conv), "message": msg}
 
 
 class ChatRequest(BaseModel):

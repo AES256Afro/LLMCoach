@@ -140,6 +140,18 @@ def assign_splits(rows: list[dict], val: float = 0.1, test: float = 0.1, seed: i
     return counts
 
 
+def assign_new_splits(rows: list[dict], val: float = 0.1, test: float = 0.1, seed: int = 42) -> dict[str, int]:
+    """Gives a split only to rows that don't have one yet (rows appended to an existing dataset),
+    and returns the counts for all rows."""
+    fresh = [r for r in rows if r.get("split") not in ("train", "val", "test")]
+    if fresh:
+        assign_splits(fresh, val, test, seed)
+    counts = {"train": 0, "val": 0, "test": 0}
+    for r in rows:
+        counts[r["split"]] += 1
+    return counts
+
+
 def estimate_tokens(text: str) -> int:
     # ~4 characters per token for English with modern tokenizers; good enough for planning.
     return max(1, round(len(text) / 4))

@@ -34,7 +34,9 @@ FINISH_HOOKS["train"] = _finish
 
 @router.get("/api/training/options")
 def options() -> dict:
-    return {"base_models": training.BASE_MODELS, "presets": training.PRESETS, "hardware": training.hardware(),
+    hw = training.hardware()
+    return {"base_models": training.BASE_MODELS, "presets": training.PRESETS, "hardware": hw,
+            "recommended_base_model": training.recommended_base_model(hw),
             "cpu_max_params_b": training.CPU_MAX_PARAMS_B, "hf_token_set": bool(settings.hf_token)}
 
 

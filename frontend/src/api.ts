@@ -184,17 +184,29 @@ export interface ChatStats {
   retrieval_ms: number | null
 }
 
+/** Payload of an event card in a chat thread (role "event"). `card` says which kind. */
+export interface ChatCardData {
+  card: 'attach' | 'learn' | 'train' | 'eval' | 'logs' | string
+  [key: string]: unknown
+}
+
 export interface ChatMessage {
   id: number
   conversation_id: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'event'
   content: string
   thinking: string | null
   model: string | null
   sources: SearchHit[] | null
   stats: ChatStats | null
+  data: ChatCardData | null
   error: string | null
   created_at: string
+}
+
+export interface AttachResult {
+  conversation: Conversation
+  message: ChatMessage
 }
 
 export interface Conversation {
@@ -242,7 +254,7 @@ export interface Dataset {
   id: number
   project_id: number
   name: string
-  source: 'upload' | 'generated'
+  source: 'upload' | 'generated' | 'chat'
   status: 'generating' | 'ready' | 'failed'
   row_count: number
   splits: Record<Split, number> | null
@@ -301,6 +313,7 @@ export interface Hardware {
 }
 
 export interface TrainingOptions {
+  recommended_base_model: string
   base_models: BaseModel[]
   presets: Record<string, TrainPreset>
   hardware: Hardware
@@ -472,6 +485,17 @@ export const api = {
     request<Conversation>(`/api/projects/${pid}/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteConversation: (pid: number, id: number) =>
     request<void>(`/api/projects/${pid}/conversations/${id}`, { method: 'DELETE' }),
+  createConversation: (pid: number, title?: string) =>
+    request<Conversation>(`/api/projects/${pid}/conversations`, { method: 'POST', body: JSON.stringify({ title }) }),
+  addEvent: (pid: number, conversationId: number, text: string, data: ChatCardData) =>
+    request<ChatMessage>(`/api/projects/${pid}/conversations/${conversationId}/events`, {
+      method: 'POST', body: JSON.stringify({ text, data }),
+    }),
+  learnFromKnowledge: (pid: number, body: { conversation_id?: number; model?: string; max_chunks?: number }) =>
+    request<AttachResult>(`/api/projects/${pid}/chat/learn`, { method: 'POST', body: JSON.stringify(body) }),
+  jobLog: (id: number) => request<string>(`/api/jobs/${id}/log`),
+  jobMetrics: (id: number) => request<JobEvent[]>(`/api/jobs/${id}/metrics`),
+  finetune: (pid: number, id: number) => request<FineTune>(`/api/projects/${pid}/finetunes/${id}`),
   datasets: (pid: number) => request<Dataset[]>(`/api/projects/${pid}/datasets`),
   dataset: (pid: number, id: number) => request<Dataset>(`/api/projects/${pid}/datasets/${id}`),
   datasetRows: (pid: number, id: number, opts: { split?: Split; q?: string; offset?: number; limit?: number } = {}) => {
@@ -497,9 +521,10 @@ export const api = {
   models: (capability?: 'chat' | 'embeddings') =>
     request<ModelRef[]>(`/api/models${capability ? `?capability=${capability}` : ''}`),
   system: () => request<SystemStats>('/api/system'),
-  jobs: (params: { status?: JobStatus; limit?: number } = {}) => {
+  jobs: (params: { status?: JobStatus; limit?: number; project_id?: number } = {}) => {
     const q = new URLSearchParams()
     if (params.status) q.set('status', params.status)
+    if (params.project_id != null) q.set('project_id', String(params.project_id))
     if (params.limit) q.set('limit', String(params.limit))
     return request<Job[]>(`/api/jobs?${q}`)
   },
@@ -569,6 +594,35 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
     throw err
   }
   return body
+}
+
+/** Files dropped (or text pasted) into a chat: remembered, or also learned from. */
+export function attachToChat(pid: number, opts: {
+  files: File[]; mode: 'remember' | 'learn'; text?: string; title?: string; conversationId?: number; model?: string
+}, onProgress: (fraction: number) => void = () => {}): Promise<AttachResult> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    for (const f of opts.files) form.append('files', f, f.name)
+    form.append('mode', opts.mode)
+    if (opts.text) form.append('text', opts.text)
+    if (opts.title) form.append('title', opts.title)
+    if (opts.conversationId != null) form.append('conversation_id', String(opts.conversationId))
+    if (opts.model) form.append('model', opts.model)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/projects/${pid}/chat/attach`)
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)
+    xhr.onload = () => {
+      if (xhr.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+      else {
+        let detail = xhr.statusText
+        try { detail = errorDetail(JSON.parse(xhr.responseText).detail) ?? detail } catch { /* not json */ }
+        reject(new Error(detail))
+      }
+    }
+    xhr.onerror = () => reject(new Error('upload failed: network error'))
+    xhr.send(form)
+  })
 }
 
 /** Multipart upload with progress (fetch can't report upload progress). */
