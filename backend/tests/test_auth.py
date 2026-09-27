@@ -44,6 +44,34 @@ def test_login_then_logout(auth_on):
     assert c.get("/api/jobs").status_code == 401
 
 
+def test_api_docs_need_a_session(auth_on):
+    assert auth_on.get("/openapi.json").status_code == 401
+    assert auth_on.get("/docs").status_code == 401
+
+
+def test_session_cookie_is_secure_behind_https(auth_on):
+    creds = {"username": "owner", "password": "s3cret"}
+    plain = auth_on.post("/api/auth/login", json=creds)
+    assert "secure" not in plain.headers["set-cookie"].lower()
+    proxied = auth_on.post("/api/auth/login", json=creds, headers={"X-Forwarded-Proto": "https"})
+    assert "secure" in proxied.headers["set-cookie"].lower()
+
+
+def test_spa_fallback_is_not_used_for_unknown_api_paths(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.main import SPAStaticFiles
+
+    (tmp_path / "index.html").write_text("<html>app</html>")
+    spa = FastAPI()
+    spa.mount("/", SPAStaticFiles(directory=tmp_path, html=True))
+    with TestClient(spa) as c:
+        assert c.get("/some/client/route").text == "<html>app</html>"
+        r = c.get("/api/nope")
+        assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+
+
 def test_websocket_rejected_without_session(auth_on):
     with pytest.raises(WebSocketDisconnect) as e:
         with auth_on.websocket_connect("/ws/system") as ws:

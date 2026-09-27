@@ -24,6 +24,8 @@ SESSION_SECONDS = 30 * 24 * 3600
 # Paths reachable without a session. Everything else under /api and /ws is protected;
 # the static UI itself is public so the login screen can load.
 PUBLIC_PATHS = {"/api/health", "/api/auth/login", "/api/auth/me", "/api/auth/logout"}
+# FastAPI's API docs; main.py also turns them off when sign-in is enabled at startup.
+DOCS_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
 # Without a configured secret, sessions last until the process restarts.
 _secret = (settings.session_secret or secrets.token_hex(32)).encode()
@@ -75,7 +77,8 @@ class AuthMiddleware:
         if scope["type"] not in ("http", "websocket") or not auth_enabled():
             return await self.app(scope, receive, send)
         path = scope["path"]
-        protected = (path.startswith("/api/") or path.startswith("/ws/")) and path not in PUBLIC_PATHS
+        protected = ((path.startswith("/api/") or path.startswith("/ws/")) and path not in PUBLIC_PATHS
+                     or path in DOCS_PATHS)
         if not protected or verify_token(_cookie_from_scope(scope)):
             return await self.app(scope, receive, send)
 
@@ -106,8 +109,14 @@ def me(request: Request) -> dict:
     return {"auth_enabled": True, "user": verify_token(request.cookies.get(COOKIE))}
 
 
+def _is_https(request: Request) -> bool:
+    # Behind BoxPilot's (or any) TLS-terminating proxy the app itself sees plain HTTP.
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or forwarded == "https"
+
+
 @router.post("/login")
-async def login(body: Login, response: Response) -> dict:
+async def login(body: Login, request: Request, response: Response) -> dict:
     if not auth_enabled():
         return {"auth_enabled": False, "user": None}
     ok_user = hmac.compare_digest(body.username.encode(), settings.username.encode())
@@ -116,7 +125,7 @@ async def login(body: Login, response: Response) -> dict:
         await asyncio.sleep(1)  # slow down guessing
         raise HTTPException(401, "wrong username or password")
     response.set_cookie(COOKIE, make_token(body.username), max_age=SESSION_SECONDS,
-                        httponly=True, samesite="lax", path="/")
+                        httponly=True, samesite="lax", path="/", secure=_is_https(request))
     return {"auth_enabled": True, "user": body.username}
 
 
