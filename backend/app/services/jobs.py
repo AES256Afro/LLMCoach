@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -53,6 +54,10 @@ class JobManager:
         self._procs: dict[int, subprocess.Popen] = {}
         self._cancelled: set[int] = set()
         self._task: asyncio.Task | None = None
+        # cancel() runs in a request thread while _run() runs on the event loop; this makes
+        # "queued -> running", "start the process" and "cancel" atomic with respect to each other.
+        # Only short DB writes happen under it.
+        self._lock = threading.Lock()
 
     # ---- lifecycle -------------------------------------------------------
     async def start(self) -> None:
@@ -91,13 +96,22 @@ class JobManager:
         return job
 
     def cancel(self, session: Session, job: Job) -> None:
-        if job.status.is_final:
-            return
-        self._cancelled.add(job.id)
-        if job.status == JobStatus.queued:
-            self._finish(job.id, JobStatus.cancelled)
-        elif proc := self._procs.get(job.id):
-            proc.terminate()
+        finished = None
+        with self._lock:
+            session.refresh(job)  # the runner may have started it since the caller loaded it
+            if job.status.is_final:
+                return
+            if job.status == JobStatus.queued:
+                # Final before the lock is released, so the runner can no longer start it.
+                finished = self._set_final(job.id, JobStatus.cancelled)
+            else:
+                # If the process isn't registered yet, the runner checks this flag right after starting it.
+                self._cancelled.add(job.id)
+                if proc := self._procs.get(job.id):
+                    proc.terminate()
+        if finished is not None:
+            log.info("job #%s cancelled before it started", job.id)
+            _run_hook(finished)
         session.refresh(job)
 
     @property
@@ -115,7 +129,7 @@ class JobManager:
                 self._finish(job_id, JobStatus.failed, error=f"runner error: {e}")
 
     async def _run(self, job_id: int) -> None:
-        with Session(engine) as s:
+        with self._lock, Session(engine) as s:
             job = s.get(Job, job_id)
             if job is None or job.status != JobStatus.queued:
                 return
@@ -137,11 +151,15 @@ class JobManager:
                 [sys.executable, "-m", WORKERS[kind], "--job-dir", str(d)],
                 cwd=BACKEND_DIR, env=env, stdout=logf, stderr=subprocess.STDOUT,
             )
-            self._procs[job_id] = proc
+            with self._lock:
+                self._procs[job_id] = proc
+                if job_id in self._cancelled:  # cancelled between "running" and now
+                    proc.terminate()
             try:
                 code = await asyncio.to_thread(proc.wait)
             finally:
-                self._procs.pop(job_id, None)
+                with self._lock:
+                    self._procs.pop(job_id, None)
 
         if job_id in self._cancelled:
             self._finish(job_id, JobStatus.cancelled, exit_code=code)
@@ -151,17 +169,31 @@ class JobManager:
             self._finish(job_id, JobStatus.failed, exit_code=code, error=_tail(d / "log.txt"))
 
     def _finish(self, job_id: int, status: JobStatus, exit_code: int | None = None, error: str | None = None) -> None:
+        with self._lock:
+            job = self._set_final(job_id, status, exit_code, error)
+        if job is None:
+            return
+        (log.warning if job.status == JobStatus.failed else log.info)(
+            "job #%s %s (exit=%s)", job_id, job.status.value, exit_code)
+        _run_hook(job)
+
+    def _set_final(self, job_id: int, status: JobStatus, exit_code: int | None = None,
+                   error: str | None = None) -> Job | None:
+        """Records a final status (call with the lock held). A job already cancelled stays cancelled."""
         self._cancelled.discard(job_id)
-        (log.warning if status == JobStatus.failed else log.info)("job #%s %s (exit=%s)", job_id, status.value, exit_code)
         with Session(engine) as s:
             job = s.get(Job, job_id)
             if job is None:
-                return
-            job.status, job.exit_code, job.error, job.finished_at = status, exit_code, error, utcnow()
+                return None
+            if job.status == JobStatus.cancelled:
+                status, error = JobStatus.cancelled, job.error
+            job.status, job.exit_code, job.error = status, exit_code, error
+            job.finished_at = job.finished_at or utcnow()
             s.add(job)
             s.commit()
             s.refresh(job)
-        _run_hook(job)
+            s.expunge(job)
+            return job
 
 
 def _run_hook(job: Job) -> None:

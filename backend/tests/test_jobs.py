@@ -70,6 +70,43 @@ def test_cancel_running_job(client):
     assert wait_final(client, nxt["id"])["status"] == "done"
 
 
+def test_cancel_while_the_process_is_starting(client, monkeypatch):
+    """Cancel lands after the job is marked running but before its process is registered."""
+    import subprocess
+
+    from sqlmodel import Session
+
+    from app.db import Job, engine
+    from app.services import jobs
+
+    real_popen = subprocess.Popen
+
+    def popen(cmd, *args, **kw):
+        proc = real_popen(cmd, *args, **kw)
+        if isinstance(cmd, list) and "app.workers.demo" in cmd:
+            job_id = int(cmd[cmd.index("--job-dir") + 1].replace("\\", "/").rsplit("/", 1)[-1])
+            with Session(engine) as s:
+                jobs.manager.cancel(s, s.get(Job, job_id))
+        return proc
+
+    monkeypatch.setattr(jobs.subprocess, "Popen", popen)
+    started = time.time()
+    job = client.post("/api/jobs", json={"kind": "demo", "config": {"steps": 5, "delay": 2}}).json()
+    job = wait_final(client, job["id"])
+    assert job["status"] == "cancelled" and time.time() - started < 8  # terminated, not run to completion
+
+
+def test_finish_keeps_a_cancelled_status(client):
+    from app.db import JobStatus
+    from app.services.jobs import manager
+
+    job = client.post("/api/jobs", json={"kind": "demo", "config": {"steps": 1000, "delay": 0.05}}).json()
+    client.post(f"/api/jobs/{job['id']}/cancel")
+    assert wait_final(client, job["id"])["status"] == "cancelled"
+    manager._finish(job["id"], JobStatus.done, exit_code=0)  # a late finish must not flip it to done
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "cancelled"
+
+
 def test_websocket_streams_history_and_final_status(client):
     job = client.post("/api/jobs", json={"kind": "demo", "config": {"steps": 3, "delay": 0.01}}).json()
     wait_final(client, job["id"])
@@ -89,6 +126,38 @@ def test_websocket_streams_history_and_final_status(client):
     assert any("step    3/3" in ln for ln in lines)
     assert sum(1 for e in events if e["type"] == "metric") == 3
     assert statuses[-1] == "done"
+
+
+def test_websocket_sends_all_of_a_large_finished_log(client):
+    from sqlmodel import Session
+
+    from app.db import Job, JobStatus, engine
+    from app.services.jobs import job_dir
+
+    with Session(engine) as s:
+        job = Job(kind="demo", config={}, status=JobStatus.done, exit_code=0)
+        s.add(job)
+        s.commit()
+        s.refresh(job)
+        job_id = job.id
+    d = job_dir(job_id)
+    d.mkdir(parents=True, exist_ok=True)
+    n = 60_000  # ~3.5 MB: several read_new() chunks
+    (d / "log.txt").write_text("".join(f"line {i:06d} " + "x" * 48 + "\n" for i in range(n - 1)) + "last, no newline")
+    (d / "metrics.jsonl").write_text("".join(f'{{"type": "metric", "step": {i}, "pad": "{"y" * 40}"}}\n' for i in range(30_000)))
+    lines, events = [], []
+    with client.websocket_connect(f"/ws/jobs/{job_id}") as ws:
+        while True:
+            try:
+                msg = ws.receive_json()
+            except Exception:
+                break
+            if msg["type"] == "log":
+                lines += msg["lines"]
+            elif msg["type"] == "events":
+                events += msg["events"]
+    assert len(lines) == n and lines[-1] == "last, no newline"
+    assert len(events) == 30_000
 
 
 def test_file_tail_handles_partial_lines(tmp_path):
