@@ -41,3 +41,27 @@ export function rememberStudio(id: string) {
     /* storage unavailable */
   }
 }
+
+/** What a studio is showing, so that switching studios lands on the same thing (roadmap L0). */
+export interface StudioContext {
+  conversation?: number | null
+  finetune?: number | null
+  evaluation?: number | null
+  dataset?: number | null
+  document?: number | null
+}
+
+/** Where `id` shows what `ctx` names, as close as that studio can get to it. */
+export function studioLink(id: string, ctx: StudioContext = {}): string {
+  const { conversation: c, finetune: f, evaluation: e, dataset: d, document: doc } = ctx
+  switch (id) {
+    case 'chat': return c ? `/chat/${c}` : '/chat'
+    case 'canvas': return f ? `/canvas?node=ft-${f}` : e ? `/canvas?node=ev-${e}` : d ? `/canvas?node=ds-${d}` : doc ? '/canvas?node=docs' : c ? '/canvas?node=chat' : '/canvas'
+    case 'workbench': return c ? `/workbench?open=chat:${c}` : f ? `/workbench?open=finetune:${f}` : e ? `/workbench?open=eval:${e}` : d ? `/workbench?open=dataset:${d}` : doc ? `/workbench?open=doc:${doc}` : '/workbench'
+    case 'notebook': return e ? `/notebook/report/${e}` : f ? '/notebook/train' : d ? '/notebook/dataset' : doc ? '/notebook/documents' : c ? `/notebook?c=${c}` : '/notebook'
+    case 'friendly': return e ? '/friendly/results' : f || d ? '/friendly/train' : doc ? '/friendly/knowledge' : c ? `/friendly/chat?c=${c}` : '/friendly'
+    case 'mission': return f ? '/console/train' : e ? '/console/eval' : d ? '/console/data' : doc ? '/console/know' : c ? `/console?c=${c}` : '/console'
+    case 'classic': return f ? '/train' : e ? '/compare' : d ? '/datasets' : doc ? '/knowledge' : c ? '/playground' : '/'
+    default: return STUDIOS.find((s) => s.id === id)?.path ?? '/'
+  }
+}

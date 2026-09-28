@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { STUDIOS, rememberStudio } from './registry'
+import { STUDIOS, rememberStudio, studioLink, type StudioContext } from './registry'
 
 /**
  * Popover listing the studios. Each studio styles its own trigger; the menu itself uses the
- * surrounding studio's tokens, so it fits in wherever it opens.
+ * surrounding studio's tokens, so it fits in wherever it opens. `context` names what the studio is
+ * showing, so the next studio opens on the same conversation, run or evaluation.
  */
-export function StudioSwitcher({ current, children, align = 'left', className = '' }: {
+export function StudioSwitcher({ current, children, align = 'left', className = '', context }: {
   current: string
   children: ReactNode
   align?: 'left' | 'right'
   className?: string
+  context?: StudioContext
 }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -47,7 +49,7 @@ export function StudioSwitcher({ current, children, align = 'left', className = 
                       onClick={() => {
                         rememberStudio(s.id)
                         setOpen(false)
-                        navigate(s.path)
+                        navigate(studioLink(s.id, context))
                       }}
                       className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left ${active ? 'bg-panel-2' : ready ? 'hover:bg-panel-2' : 'cursor-default opacity-50'}`}>
                 <span className="flex h-7 w-7 shrink-0 overflow-hidden rounded-md border border-line">

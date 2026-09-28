@@ -14,7 +14,7 @@ import { api, uploadDocuments, type Conversation, type Job, type KBDocument, typ
 import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
 import { useJobStream, useSystemStream } from '../../hooks/streams'
-import { STUDIOS, rememberStudio } from '../registry'
+import { STUDIOS, rememberStudio, type StudioContext } from '../registry'
 import { StudioSwitcher } from '../StudioSwitcher'
 import { ChatTab, DatasetTab, DocTab, EvalTab, FinetuneTab, JobTab, LogLines, NewFinetuneTab, WelcomeTab, type TabProps } from './tabs'
 
@@ -26,6 +26,14 @@ const CLASSIC_PAGES: [string, string][] = [
   ['API tokens', '/inbox?tab=tokens'], ['Datasets', '/datasets'], ['Train', '/train'], ['Playground', '/playground'], ['Compare', '/compare'],
   ['Providers', '/providers'], ['Logs', '/logs'],
 ]
+
+/** The active tab as something other studios can open. */
+function tabContext(key: string): StudioContext {
+  const [kind, arg] = key.split(':')
+  const n = Number(arg)
+  if (!n) return {}
+  return ({ chat: { conversation: n }, finetune: { finetune: n }, eval: { evaluation: n }, dataset: { dataset: n }, doc: { document: n } } as Record<string, StudioContext>)[kind] ?? {}
+}
 
 function loadTabs(pid: number | undefined): { tabs: string[]; active: string } {
   try {
@@ -172,7 +180,7 @@ export default function WorkbenchStudio() {
     <div className="studio-workbench flex h-full flex-col">
       <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <header className="wb-title">
-        <StudioSwitcher current="workbench"><span className="brand">LLMCoach</span></StudioSwitcher>
+        <StudioSwitcher current="workbench" context={tabContext(active)}><span className="brand">LLMCoach</span></StudioSwitcher>
         <button className="wb-cmd" onClick={() => setPalette(true)}><Search className="h-3.5 w-3.5" />Search chats, docs, runs or run a command<kbd>Ctrl K</kbd></button>
         <select className="wb-proj" value={project.id} onChange={(e) => select(Number(e.target.value))} aria-label="Project">
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

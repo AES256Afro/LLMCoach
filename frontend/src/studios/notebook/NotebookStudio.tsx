@@ -10,7 +10,7 @@ import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
 import { StudioSwitcher } from '../StudioSwitcher'
 import { rememberStudio } from '../registry'
-import { useChatSession } from '../chat/useChatSession'
+import { startingConversation, useChatSession } from '../chat/useChatSession'
 import { DatasetStep, DocumentsStep, EvaluateStep, ReportView, TrainStep } from './steps'
 
 const STEPS = [
@@ -27,6 +27,7 @@ export default function NotebookStudio() {
   const params = useParams()
   const pid = project?.id
   const { data: g, reload } = usePolling<PipelineGraph | null>(() => (pid ? api.pipeline(pid) : Promise.resolve(null)), 5000, [pid])
+  const [conversation, setConversation] = useState<number | null>(null)
   useEffect(() => rememberStudio('notebook'), [])
 
   if (!project || !g) return <div className="studio-notebook grid h-full place-items-center nb-serif text-lg">Opening the notebook…</div>
@@ -47,7 +48,7 @@ export default function NotebookStudio() {
     <div className="studio-notebook flex h-full flex-col">
       <header className="nb-top nb-noprint">
         <div className="nb-brand">
-          <StudioSwitcher current="notebook"><span className="cursor-pointer">LLMCoach</span></StudioSwitcher>
+          <StudioSwitcher current="notebook" context={params.evalId ? { evaluation: Number(params.evalId) } : view === 'ask' ? { conversation } : {}}><span className="cursor-pointer">LLMCoach</span></StudioSwitcher>
           {projects.length > 1 ? (
             <select aria-label="Project" value={project.id} onChange={(e) => select(Number(e.target.value))}
                     className="cursor-pointer bg-transparent font-sans text-xs font-medium text-[var(--mu)] outline-none">
@@ -66,7 +67,7 @@ export default function NotebookStudio() {
         </ol>
         <Link to="/notebook" className={`nb-pill ${view === 'ask' ? 'on' : ''}`}><MessageCircle className="h-3.5 w-3.5" />Ask your bot</Link>
       </header>
-      {view === 'ask' && <AskView g={g} />}
+      {view === 'ask' && <AskView g={g} onConversation={setConversation} />}
       {view === 'documents' && <DocumentsStep g={g} changed={reload} />}
       {view === 'dataset' && <DatasetStep g={g} changed={reload} />}
       {view === 'train' && <TrainStep g={g} changed={reload} />}
@@ -124,7 +125,7 @@ function Turn({ q, a, faded }: { q: string; a: ChatMessage | null; faded?: boole
   return null
 }
 
-function AskView({ g }: { g: PipelineGraph }) {
+function AskView({ g, onConversation }: { g: PipelineGraph; onConversation: (id: number | null) => void }) {
   const { current } = useProject()
   const session = useChatSession(current)
   const { active, pending, streaming, settings, setSettings } = session
@@ -135,8 +136,10 @@ function AskView({ g }: { g: PipelineGraph }) {
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(() => { api.models('chat').then(setModels).catch(() => {}) }, [])
   useEffect(() => {
-    if (!opened && !active && session.conversations.length) { setOpened(true); session.open(session.conversations[0].id) }
+    if (!opened && !active && session.conversations.length) { setOpened(true); session.open(startingConversation(session.conversations)!) }
   }, [opened, active, session])
+
+  useEffect(() => onConversation(active?.id ?? null), [active?.id, onConversation])
 
   // Pair the conversation into question/answer turns; events stay out of the prose.
   const turns = useMemo(() => {

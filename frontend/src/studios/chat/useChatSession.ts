@@ -238,3 +238,10 @@ export function useChatSession(project: Project | null) {
 }
 
 export type ChatSession = ReturnType<typeof useChatSession>
+
+/** The conversation a studio should open first: the one named by ?c= in the URL (another studio
+ *  switching here), else the most recent. */
+export function startingConversation(list: Conversation[]): number | undefined {
+  const wanted = Number(new URLSearchParams(window.location.search).get('c'))
+  return (list.find((c) => c.id === wanted) ?? list[0])?.id
+}
