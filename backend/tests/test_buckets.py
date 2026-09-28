@@ -89,8 +89,7 @@ def test_bucket_source_end_to_end(client, s3):
     old = files["policy.md"]["doc_id"]
     _put(s3, "team-docs", "notes/policy.md", _text("Refund policy, second edition"), age=60)
     del s3.app.state.buckets["team-docs"]["notes/sub/ferry times.md"]
-    scan()
-    out = scan()
+    out = scan()  # a changed object is read in the same look: LLMCoach wrote its copy in one go
     files = _files(client, pid, src["id"])
     assert files["policy.md"]["status"] == "added" and files["policy.md"]["doc_id"] != old
     assert files["sub/ferry times.md"]["status"] == "gone"

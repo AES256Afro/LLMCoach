@@ -113,6 +113,7 @@ backend/app/
   api/tokens.py        API tokens for scripts (hash stored; "inbox" scope can only upload)
   services/scan.py     secret and personal-data checks for incoming files
   services/s3.py       list and read S3 / MinIO buckets (SigV4, no SDK)
+  services/web.py      fetch a web page, PDF or text file by its address
   services/jobs.py     single-GPU queue; each job = python -m app.workers.<kind>
   services/device.py   CPU / nvidia-smi / rocm-smi detection and stats
   workers/             job processes; write log.txt + metrics.jsonl in data/runs/<id>/

@@ -21,7 +21,9 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 LLMCOACH_VERSION=${VERSION} \
     LLMCOACH_DATA_DIR=/data HF_HOME=/data/hf-cache \
     LLMCOACH_OLLAMA_URL=http://host.docker.internal:11434
 
-RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
+# tesseract-ocr reads scanned PDFs (English; add tesseract-ocr-<lang> packages for other languages).
+RUN apt-get update && apt-get install -y --no-install-recommends git curl tesseract-ocr tesseract-ocr-eng \
+ && rm -rf /var/lib/apt/lists/*
 
 # CUDA base images ship torch already; CPU images get the (small) CPU wheel.
 RUN python -c "import torch" 2>/dev/null || pip install torch --index-url "$TORCH_INDEX"

@@ -138,6 +138,7 @@ export interface KBDocument {
   char_count: number
   embed_model: string | null
   error: string | null
+  source_url: string | null // the web address it was fetched from, if any
   created_at: string
   ingested_at: string | null
 }
@@ -160,6 +161,7 @@ export interface SearchHit {
   page: number | null
   text: string
   score: number
+  source_url?: string | null // set for pages fetched from the web
 }
 
 export interface Chunk {
@@ -454,7 +456,8 @@ export interface Source {
   id: number
   project_id: number
   name: string
-  kind: 'folder' | 'bucket'
+  kind: 'folder' | 'bucket' | 'web'
+  urls: string[] | null // web sources: pages re-read on each look
   folder: string // folder sources: relative to the inbox ("." is its root)
   endpoint: string | null // bucket sources (S3, MinIO...)
   bucket: string | null
@@ -650,6 +653,8 @@ export const api = {
     request<ReachStatus>('/api/providers/test', { method: 'POST', body: JSON.stringify(body) }),
   documents: (pid: number) => request<KBDocument[]>(`/api/projects/${pid}/documents`),
   knowledge: (pid: number) => request<KnowledgeStats>(`/api/projects/${pid}/knowledge`),
+  addUrl: (pid: number, url: string) =>
+    request<UploadResult>(`/api/projects/${pid}/documents/url`, { method: 'POST', body: JSON.stringify({ url }) }),
   deleteDocument: (pid: number, id: number) => request<void>(`/api/projects/${pid}/documents/${id}`, { method: 'DELETE' }),
   reindex: (pid: number, doc_ids?: number[]) =>
     request<Job>(`/api/projects/${pid}/documents/reindex`, { method: 'POST', body: JSON.stringify({ doc_ids: doc_ids ?? null }) }),
@@ -725,10 +730,10 @@ export const api = {
   health: () => request<{ ok: boolean; version: string }>('/api/health'),
   inbox: () => request<InboxInfo>('/api/inbox'),
   sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
-  createSource: (pid: number, body: { name?: string; kind?: 'folder' | 'bucket'; folder?: string; endpoint?: string; bucket?: string; prefix?: string
+  createSource: (pid: number, body: { name?: string; kind?: Source['kind']; folder?: string; urls?: string[]; endpoint?: string; bucket?: string; prefix?: string
     region?: string; access_key?: string; secret_key?: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
     request<Source>(`/api/projects/${pid}/sources`, { method: 'POST', body: JSON.stringify(body) }),
-  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes' | 'endpoint' | 'region' | 'access_key'>> & { secret_key?: string }) =>
+  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes' | 'endpoint' | 'region' | 'access_key'>> & { secret_key?: string; urls?: string[] }) =>
     request<Source>(`/api/projects/${pid}/sources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSource: (pid: number, id: number) => request<void>(`/api/projects/${pid}/sources/${id}`, { method: 'DELETE' }),
   scanSource: (pid: number, id: number) => request<PollResult>(`/api/projects/${pid}/sources/${id}/scan`, { method: 'POST' }),
@@ -830,7 +835,7 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
 
 /** Files dropped (or text pasted) into a chat: remembered, or also learned from. */
 export function attachToChat(pid: number, opts: {
-  files: File[]; mode: AttachMode; text?: string; title?: string; conversationId?: number; model?: string
+  files: File[]; mode: AttachMode; text?: string; title?: string; url?: string; conversationId?: number; model?: string
 }, onProgress: (fraction: number) => void = () => {}): Promise<AttachResult> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
@@ -840,6 +845,7 @@ export function attachToChat(pid: number, opts: {
     if (opts.title) form.append('title', opts.title)
     if (opts.conversationId != null) form.append('conversation_id', String(opts.conversationId))
     if (opts.model) form.append('model', opts.model)
+    if (opts.url) form.append('url', opts.url)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `/api/projects/${pid}/chat/attach`)
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)

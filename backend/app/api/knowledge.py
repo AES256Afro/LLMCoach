@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from ..config import settings
 from ..db import Document, DocStatus, Job, JobStatus, Project, engine, get_session
-from ..services import kb
+from ..services import kb, web
 from ..services import scan as scanner
 from ..services.jobs import FINISH_HOOKS, manager
 from ..services.parsing import SUPPORTED, ParseError, parse
@@ -76,6 +76,26 @@ async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
     return {"documents": added, "skipped": skipped, "held": held, "job": job}
 
 
+class AddUrl(BaseModel):
+    url: str
+
+
+@router.post("/documents/url", status_code=201)
+async def add_url(project_id: int, body: AddUrl, check: bool = True, session: Session = Depends(get_session)) -> dict:
+    """Fetches a web page (or a PDF or text file by its address) and adds it like an upload."""
+    project = get_project_or_404(session, project_id)
+    try:
+        name, data, final = await web.fetch(body.url, MAX_FILE_BYTES)
+    except web.WebError as e:
+        raise HTTPException(400, str(e)) from e
+    added, skipped = await store_documents(session, project_id, [(name, data)], source_url=final)
+    ready, held = await hold_suspicious(session, added) if check else (added, [])
+    job = _submit_ingest(session, project, [d.id for d in ready]) if ready else None
+    for d in added:
+        session.refresh(d)
+    return {"documents": added, "skipped": skipped, "held": held, "job": job}
+
+
 async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[Document], list[dict]]:
     """Splits newly stored documents into those to index and those held back because they look like
     they contain secrets or personal data (the same check as the inbox). A held document stays
@@ -83,7 +103,8 @@ async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[
     ready, held = [], []
     for d in docs:
         try:
-            text = await asyncio.to_thread(lambda p=settings.data_dir / d.path: "\n\n".join(t for t, _ in parse(p)))
+            # No OCR here: someone is waiting on this upload, and a scan can take minutes to read.
+            text = await asyncio.to_thread(lambda p=settings.data_dir / d.path: "\n\n".join(t for t, _ in parse(p, ocr=False)))
         except ParseError:
             ready.append(d)  # the indexing job reports why it can't be read
             continue
@@ -99,8 +120,8 @@ async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[
     return ready, held
 
 
-async def store_documents(session: Session, project_id: int,
-                          items: list[tuple[str, bytes]]) -> tuple[list[Document], list[dict]]:
+async def store_documents(session: Session, project_id: int, items: list[tuple[str, bytes]],
+                          source_url: str | None = None) -> tuple[list[Document], list[dict]]:
     """Saves (filename, bytes) pairs as knowledge-base documents, skipping unsupported, empty,
     oversized and duplicate files. Shared by the upload page and the chat's drop zone."""
     target = docs_dir(project_id)
@@ -123,7 +144,8 @@ async def store_documents(session: Session, project_id: int,
         if digest in existing:
             skipped.append({"filename": name, "reason": "already in this knowledge base", "doc_id": existing[digest]})
             continue
-        doc = Document(project_id=project_id, filename=name, path="", size_bytes=len(data), sha256=digest)
+        doc = Document(project_id=project_id, filename=name, path="", size_bytes=len(data), sha256=digest,
+                       source_url=source_url)
         session.add(doc)
         session.commit()
         session.refresh(doc)
@@ -242,9 +264,11 @@ async def retrieve(session: Session, project: Project, query: str, top_k: int | 
         hits, mode = await asyncio.to_thread(kb.search, project.id, vec, k, doc_ids, text=text)
     except kb.KBError as e:
         raise HTTPException(409, str(e))
-    names = {d.id: d.filename for d in session.exec(select(Document).where(Document.project_id == project.id))}
+    docs = {d.id: d for d in session.exec(select(Document).where(Document.project_id == project.id))}
     for h in hits:
-        h["filename"] = names.get(h["doc_id"], f"document {h['doc_id']}")
+        d = docs.get(h["doc_id"])
+        h["filename"] = d.filename if d else f"document {h['doc_id']}"
+        h["source_url"] = d.source_url if d else None  # web pages link back to where they came from
     return {"results": hits, "mode": mode, "embed_ms": round(embed_ms),
             "total_ms": round((time.perf_counter() - started) * 1000)}
 
