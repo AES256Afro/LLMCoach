@@ -769,6 +769,9 @@ export const api = {
     request<NotifyConfig>('/api/notify', { method: 'PUT', body: JSON.stringify(body) }),
   testNotify: () => request<{ ok: boolean }>('/api/notify/test', { method: 'POST' }),
   pipeline: (pid: number) => request<PipelineGraph>(`/api/projects/${pid}/pipeline`),
+  speech: () => request<{ url: string; env_url: string; formats: string[] }>('/api/speech'),
+  saveSpeech: (url: string) =>
+    request<{ url: string; env_url: string; formats: string[] }>('/api/speech', { method: 'PUT', body: JSON.stringify({ url }) }),
   finetuneCard: async (pid: number, ftId: number): Promise<string> => {
     const r = await fetch(`/api/projects/${pid}/finetunes/${ftId}/card`, { credentials: 'same-origin' })
     if (!r.ok) throw new Error(`${r.status}: couldn't write the model card`)
