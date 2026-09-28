@@ -55,7 +55,7 @@ export function buildGraph(g: PipelineGraph): { nodes: Node<CardData>[]; edges: 
     node(`src-${s.id}`, COL[0], ROW + i * ROW, {
       kind: 'source', title: s.name, ref: s.id, type: 'folder',
       main: `${s.counts.added ?? 0} added${held ? ` · ${held} held` : ''}`,
-      rest: `${s.mode === 'learn' ? 'Learns · ' : ''}${s.folder === '.' ? 'inbox root' : s.folder}`,
+      rest: `${s.mode === 'learn' ? 'Learns · ' : ''}${s.kind === 'bucket' ? `s3://${s.bucket}/${s.prefix ?? ''}` : s.folder === '.' ? 'inbox root' : s.folder}`,
       status: !s.enabled ? 'idle' : s.last_error || held ? 'bad' : (s.counts.waiting ?? 0) > 0 ? 'run' : 'ok',
     })
     edge(`src-${s.id}`, 'docs')

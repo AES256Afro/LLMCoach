@@ -94,7 +94,7 @@ function Folders({ pid }: { pid: number }) {
       {adding || sources?.length === 0 ? (
         <AddSource pid={pid} root={info?.root} onDone={() => { setAdding(false); refresh() }} onCancel={sources?.length ? () => setAdding(false) : undefined} />
       ) : (
-        <Button variant="ghost" onClick={() => setAdding(true)}>Watch another folder</Button>
+        <Button variant="ghost" onClick={() => setAdding(true)}>Watch another folder or bucket</Button>
       )}
       {info && (
         <p className="text-xs text-muted">
@@ -177,6 +177,7 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
     onChange()
   }
   const total = Object.values(s.counts).reduce((a, b) => a + (b ?? 0), 0)
+  const where = s.kind === 'bucket' ? 'bucket' : 'folder'
 
   return (
     <Card
@@ -191,7 +192,7 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
         <>
           <Button variant="ghost" disabled={scanning || !s.enabled} onClick={scan}>{scanning ? 'Looking…' : 'Look now'}</Button>
           <Button variant="ghost" onClick={() => update({ enabled: !s.enabled })}>{s.enabled ? 'Pause' : 'Resume'}</Button>
-          <Button variant="danger" onClick={() => confirm(`Stop watching ${s.name}? Its files and the documents already added stay.`) && api.deleteSource(pid, s.id).then(onChange)}>
+          <Button variant="danger" onClick={() => confirm(`Stop watching ${s.name}? Its ${s.kind === 'bucket' ? 'objects' : 'files'} and the documents already added stay.`) && api.deleteSource(pid, s.id).then(onChange)}>
             Stop watching
           </Button>
         </>
@@ -213,11 +214,11 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
         <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={s.mirror_deletes}
                onChange={(e) => update({ mirror_deletes: e.target.checked })} />
         <span>
-          Forget files deleted from this folder
+          Forget files deleted from this {where}
           <span className="block text-[11px] text-muted">
             {s.mirror_deletes
-              ? 'A file gone for a minute takes its document out of the knowledge base. Nothing is removed while the whole folder looks empty, as an unplugged share would.'
-              : 'Off: documents stay after their file is deleted, so the folder can be cleared once files are in.'}
+              ? `A file gone for a minute takes its document out of the knowledge base. Nothing is removed while the whole ${where} looks empty${s.kind === 'bucket' ? '' : ', as an unplugged share would'}.`
+              : `Off: documents stay after their file is deleted, so the ${where} can be cleared once files are in.`}
           </span>
         </span>
       </label>
@@ -232,14 +233,21 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
       </div>
       {s.last_error && <p className="mt-2 text-xs text-bad">{s.last_error}</p>}
 
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={drop}
-        className={`mt-3 rounded-md border border-dashed px-3 py-3 text-center text-xs transition ${dragging ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted'}`}
-      >
-        Drop files here to put them in this folder{note ? <span className="mt-1 block text-text">{note}</span> : null}
-      </div>
+      {s.kind === 'bucket' ? (
+        <>
+          {note && <p className="mt-3 text-xs">{note}</p>}
+          <BucketKeys pid={pid} source={s} onChange={onChange} />
+        </>
+      ) : (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={drop}
+          className={`mt-3 rounded-md border border-dashed px-3 py-3 text-center text-xs transition ${dragging ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted'}`}
+        >
+          Drop files here to put them in this folder{note ? <span className="mt-1 block text-text">{note}</span> : null}
+        </div>
+      )}
 
       {total > 0 && (
         <button className="mt-3 text-xs text-accent hover:underline" onClick={() => setOpen((o) => !o)}>
@@ -248,6 +256,46 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
       )}
       {open && <Ledger pid={pid} sourceId={s.id} />}
     </Card>
+  )
+}
+
+function BucketKeys({ pid, source: s, onChange }: { pid: number; source: Source; onChange: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [accessKey, setAccessKey] = useState(s.access_key ?? '')
+  const [secret, setSecret] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    try {
+      await api.updateSource(pid, s.id, { access_key: accessKey, ...(secret ? { secret_key: secret } : {}) })
+      setSecret('')
+      setOpen(false)
+      onChange()
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
+    }
+  }
+  if (!open) {
+    return (
+      <p className="mt-3 text-xs text-muted">
+        Reads with key <code className="font-mono">{s.access_key}</code> · region {s.region ?? 'us-east-1'} ·{' '}
+        <button className="text-accent hover:underline" onClick={() => setOpen(true)}>Change key</button>
+      </p>
+    )
+  }
+  return (
+    <form onSubmit={save} className="mt-3 grid gap-3 sm:grid-cols-2">
+      <Field label="Access key"><input className={inputCls} value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required /></Field>
+      <Field label="Secret key" hint="Leave empty to keep the current one.">
+        <input className={inputCls} type="password" autoComplete="new-password" value={secret} onChange={(e) => setSecret(e.target.value)} />
+      </Field>
+      {error && <p className="text-xs text-bad sm:col-span-2">{error}</p>}
+      <div className="flex gap-2 sm:col-span-2">
+        <Button type="submit">Check and save</Button>
+        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+    </form>
   )
 }
 
@@ -286,7 +334,11 @@ function Ledger({ pid, sourceId }: { pid: number; sourceId: number }) {
 }
 
 function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string; onDone: () => void; onCancel?: () => void }) {
+  const [kind, setKind] = useState<'folder' | 'bucket'>('folder')
   const [folder, setFolder] = useState('')
+  const [bucket, setBucket] = useState({ endpoint: '', bucket: '', prefix: '', region: '', access_key: '', secret_key: '' })
+  const setB = (k: keyof typeof bucket) => (e: React.ChangeEvent<HTMLInputElement>) => setBucket((b) => ({ ...b, [k]: e.target.value }))
+  const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [mode, setMode] = useState<SourceMode>('remember')
   const [scan, setScan] = useState<SourceScan>('all')
@@ -294,21 +346,56 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    setBusy(true)
     try {
-      await api.createSource(pid, { folder, name: name || undefined, mode, scan })
+      await api.createSource(pid, kind === 'folder'
+        ? { folder, name: name || undefined, mode, scan }
+        : { kind, ...bucket, name: name || undefined, mode, scan, poll_seconds: 120 })
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
     }
+    setBusy(false)
   }
   return (
-    <Card title="Watch a folder">
+    <Card title={kind === 'folder' ? 'Watch a folder' : 'Watch a bucket'}>
+      <div role="radiogroup" className="mb-4 flex gap-1 text-sm">
+        {([['folder', 'A folder or network share'], ['bucket', 'An S3 or MinIO bucket']] as const).map(([k, label]) => (
+          <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+                  className={`rounded-md border px-3 py-1.5 ${kind === k ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-text'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-        <Field label="Folder inside the inbox" hint={root ? `Created under ${root} if it doesn't exist. Subfolders are included.` : undefined}>
-          <input className={inputCls} value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="contracts" required />
-        </Field>
+        {kind === 'folder' ? (
+          <Field label="Folder inside the inbox" hint={root ? `Created under ${root} if it doesn't exist. Subfolders are included.` : undefined}>
+            <input className={inputCls} value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="contracts" required />
+          </Field>
+        ) : (
+          <>
+            <Field label="Endpoint" hint="The S3 API address. BoxPilot's MinIO listens on port 9000.">
+              <input className={inputCls} value={bucket.endpoint} onChange={setB('endpoint')} placeholder="http://host.docker.internal:9000" required />
+            </Field>
+            <Field label="Bucket">
+              <input className={inputCls} value={bucket.bucket} onChange={setB('bucket')} placeholder="team-docs" required />
+            </Field>
+            <Field label="Prefix (optional)" hint="Only objects under it are read, e.g. notes/. Empty reads the whole bucket.">
+              <input className={inputCls} value={bucket.prefix} onChange={setB('prefix')} placeholder="notes/" />
+            </Field>
+            <Field label="Region (optional)" hint="MinIO doesn't care; AWS needs the bucket's region.">
+              <input className={inputCls} value={bucket.region} onChange={setB('region')} placeholder="us-east-1" />
+            </Field>
+            <Field label="Access key" hint="A read-only key is enough. LLMCoach never writes to the bucket.">
+              <input className={inputCls} value={bucket.access_key} onChange={setB('access_key')} autoComplete="off" required />
+            </Field>
+            <Field label="Secret key" hint="Stored in LLMCoach's database and never shown again.">
+              <input className={inputCls} type="password" autoComplete="new-password" value={bucket.secret_key} onChange={setB('secret_key')} required />
+            </Field>
+          </>
+        )}
         <Field label="Name (optional)">
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Contracts" />
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'folder' ? 'Contracts' : 'Team docs'} />
         </Field>
         <Field label="What to do with new files">
           <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as SourceMode)}>
@@ -322,7 +409,7 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
         </Field>
         {error && <p className="text-xs text-bad sm:col-span-2">{error}</p>}
         <div className="flex gap-2 sm:col-span-2">
-          <Button type="submit">Start watching</Button>
+          <Button type="submit" disabled={busy}>{busy ? 'Checking…' : 'Start watching'}</Button>
           {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}
         </div>
       </form>
