@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import { Database, FileText, FolderInput, MessagesSquare, Plus, Scale, Table2, Timer, Zap } from 'lucide-react'
+import { Cloud, Database, FileText, FolderInput, Globe, MessagesSquare, Plus, Scale, Table2, Timer, Zap } from 'lucide-react'
 import { COLOR, type CardData, type Kind } from './graph'
 
 export const ICON: Record<Kind, typeof FileText> = {
@@ -11,8 +11,11 @@ export const ICON: Record<Kind, typeof FileText> = {
 const INPUT: Record<Kind, boolean> = { source: false, 'add-source': false, docs: true, kb: true, chat: true, dataset: true, finetune: true, eval: true, loop: true }
 const OUTPUT: Record<Kind, boolean> = { source: true, 'add-source': true, docs: true, kb: true, chat: false, dataset: true, finetune: true, eval: false, loop: true }
 
+/** A source's icon follows what it watches. */
+const SOURCE_ICON: Record<string, typeof FileText> = { bucket: Cloud, web: Globe }
+
 export function CardBody({ data }: { data: CardData }) {
-  const Icon = ICON[data.kind]
+  const Icon = (data.kind === 'source' && SOURCE_ICON[data.type]) || ICON[data.kind]
   return (
     <>
       {data.kind !== 'add-source' && <i className={`cv-st ${data.status}`} aria-label={data.status} />}

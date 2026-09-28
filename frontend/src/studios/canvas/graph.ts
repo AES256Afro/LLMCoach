@@ -48,12 +48,12 @@ export function buildGraph(g: PipelineGraph): { nodes: Node<CardData>[]; edges: 
   const srcRows = Math.max(1, g.sources.length)
   const docsY = ((srcRows - 1) * ROW) / 2 + ROW
   if (g.sources.length === 0) {
-    node('add-source', COL[0], ROW, { kind: 'add-source', title: 'Watch a folder', main: 'Optional', rest: 'Files copied into it join by themselves', status: 'idle', type: 'source' })
+    node('add-source', COL[0], ROW, { kind: 'add-source', title: 'Watch a folder', main: 'Optional', rest: 'A folder, bucket or web pages that join by themselves', status: 'idle', type: 'source' })
   }
   g.sources.forEach((s, i) => {
     const held = s.counts.quarantined ?? 0
     node(`src-${s.id}`, COL[0], ROW + i * ROW, {
-      kind: 'source', title: s.name, ref: s.id, type: 'folder',
+      kind: 'source', title: s.name, ref: s.id, type: s.kind === 'bucket' ? 'bucket' : s.kind === 'web' ? 'web' : 'folder',
       main: `${s.counts.added ?? 0} added${held ? ` · ${held} held` : ''}`,
       rest: `${s.mode === 'learn' ? 'Learns · ' : ''}${s.kind === 'bucket' ? `s3://${s.bucket}/${s.prefix ?? ''}` : s.kind === 'web' ? s.path : s.folder === '.' ? 'inbox root' : s.folder}`,
       status: !s.enabled ? 'idle' : s.last_error || held ? 'bad' : (s.counts.waiting ?? 0) > 0 ? 'run' : 'ok',
