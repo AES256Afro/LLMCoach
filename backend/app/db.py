@@ -288,16 +288,20 @@ class LearningLoop(SQLModel, table=True):
     last_rows: int = 0  # dataset size the last completed run trained on
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
+    # A "Run pipeline" is waiting for indexing and practice-Q&A jobs to finish before it trains.
+    pending_run: bool = False
+    last_config: str | None = None  # "<base model>|<preset>" of the last completed run
 
 
 class LoopRun(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
-    trigger: str = "schedule"  # "schedule" | "manual"
+    trigger: str = "schedule"  # "schedule" | "manual" | "pipeline"
     # training | evaluating | promoted | kept | skipped | failed
     status: str = "training"
     dataset_id: int | None = None
     rows: int = 0
+    config: str | None = None  # "<base model>|<preset>" it trained with
     finetune_id: int | None = None
     eval_id: int | None = None
     baseline_finetune_id: int | None = None

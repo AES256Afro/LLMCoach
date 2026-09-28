@@ -98,16 +98,25 @@ def start_run(s: Session, project: Project, loop: LearningLoop, trigger: str) ->
         return _end(s, run, "skipped", "There's nothing to learn from yet. Drop files onto Learn in the chat, "
                                        "or add a watched folder set to Learn.")
     run.dataset_id, run.rows = d.id, d.row_count
+    if d.status == DatasetStatus.failed:
+        return _end(s, run, "skipped", f"“{d.name}” couldn't be written ({d.error or 'no pairs were made'}). "
+                                       "Add more material and it will try again.")
     if d.status != DatasetStatus.ready:
         return _end(s, run, "skipped", f"“{d.name}” is still being written. The next run will try again.")
     new_rows = d.row_count - loop.last_rows if d.row_count >= loop.last_rows else d.row_count
     if trigger == "schedule" and new_rows < loop.min_new_rows:
         return _end(s, run, "skipped", f"No new examples since the last run ({d.row_count} in “{d.name}”).")
+    base_model = loop.base_model or training.recommended_base_model(training.hardware())
+    run.config = f"{base_model}|{loop.preset}"
+    if (trigger == "pipeline" and loop.last_run_at is not None and new_rows < max(1, loop.min_new_rows)
+            and run.config == loop.last_config):
+        # A re-run of the pipeline skips the steps whose inputs haven't changed: same data, same settings.
+        return _end(s, run, "skipped", f"Unchanged: “{d.name}” still has {d.row_count} examples and the settings are the same, "
+                                       "so training was skipped.")
     if not (d.splits or {}).get("test"):
         return _end(s, run, "skipped", f"“{d.name}” has no test questions yet, so a new adapter couldn't be judged. "
                                        "It needs about ten examples.")
     baseline = promoted(s, project.id)
-    base_model = loop.base_model or training.recommended_base_model(training.hardware())
     short = base_model.split("/")[-1]
     try:
         r = create_finetune(project.id, FineTuneCreate(
@@ -184,9 +193,35 @@ def _after_eval(job: Job) -> None:
             need = f", and needed to beat it by {loop.margin:.2f}" if loop.margin else ""
             _end(s, run, "kept", f"Scored F1 {cand:.2f} against {base:.2f} for the current adapter{need}: "
                                  "kept the current one.")
-        loop.last_rows, loop.last_run_at = run.rows, utcnow()
+        loop.last_rows, loop.last_run_at, loop.last_config = run.rows, utcnow(), run.config
         s.add(loop)
         s.commit()
+
+
+PREP_KINDS = ("ingest", "generate")
+
+
+def start_pending(project_id: int | None) -> LoopRun | None:
+    """Starts a waiting pipeline run once the project's indexing and Q&A jobs are all finished."""
+    if project_id is None:
+        return None
+    with Session(engine) as s:
+        loop = s.exec(select(LearningLoop).where(LearningLoop.project_id == project_id)).first()
+        if loop is None or not loop.pending_run:
+            return None
+        busy = s.exec(select(Job).where(Job.project_id == project_id, Job.kind.in_(PREP_KINDS),
+                                        Job.status.in_([JobStatus.queued, JobStatus.running]))).first()
+        if busy is not None:
+            return None
+        loop.pending_run = False
+        s.add(loop)
+        s.commit()
+        try:
+            run = start_run(s, s.get(Project, project_id), loop, "pipeline")
+        except HTTPException:
+            return None  # a run is already going; it covers this
+        s.expunge(run)
+        return run
 
 
 def _follow(job: Job) -> None:
@@ -194,6 +229,8 @@ def _follow(job: Job) -> None:
         _after_train(job)
     elif job.kind == "evaluate":
         _after_eval(job)
+    elif job.kind in PREP_KINDS:
+        start_pending(job.project_id)
 
 
 AFTER_HOOKS.append(_follow)

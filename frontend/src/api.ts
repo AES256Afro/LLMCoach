@@ -563,6 +563,25 @@ export interface NotifyConfig {
   available: Record<string, string> // event -> "a training run finishes"
 }
 
+export interface PipelineGraph {
+  project: { id: number; name: string }
+  sources: Source[]
+  documents: { count: number; bytes: number; by_status: Record<string, number>; recent: string[]; from_sources: number }
+  knowledge: { chunks: number; embed_model: string }
+  chat: { conversations: number; model: string | null; last_title: string | null; last_id: number | null }
+  datasets: { id: number; name: string; source: Dataset['source']; status: Dataset['status']; rows: number; splits: Record<Split, number> | null; job_id: number | null }[]
+  finetunes: (Pick<FineTune, 'id' | 'name' | 'base_model' | 'dataset_id' | 'status' | 'job_id' | 'promoted_at' | 'metrics' | 'method' | 'config' | 'finished_at'>)[]
+  evals: (Pick<EvalRun, 'id' | 'name' | 'dataset_id' | 'status' | 'variants' | 'summary' | 'job_id'>)[]
+  loop: LearningLoop & { dataset_id_effective: number | null; pending_run: boolean; runs: LoopRun[] }
+  active_jobs: { id: number; kind: string; status: JobStatus; config: Record<string, unknown> }[]
+}
+
+export interface PipelineRunResult {
+  sources: ({ source_id: number; name: string } & PollResult)[]
+  run: LoopRun | null
+  waiting: boolean
+}
+
 export interface LoopState {
   loop: LearningLoop
   dataset: { id: number; name: string; rows: number; splits: Record<Split, number> | null; status: string } | null
@@ -707,6 +726,8 @@ export const api = {
   saveNotify: (body: { url: string; token?: string; events: string[] }) =>
     request<NotifyConfig>('/api/notify', { method: 'PUT', body: JSON.stringify(body) }),
   testNotify: () => request<{ ok: boolean }>('/api/notify/test', { method: 'POST' }),
+  pipeline: (pid: number) => request<PipelineGraph>(`/api/projects/${pid}/pipeline`),
+  runPipeline: (pid: number) => request<PipelineRunResult>(`/api/projects/${pid}/pipeline/run`, { method: 'POST' }),
 }
 
 /** Drops files into a watched folder, as if they'd been copied there. */

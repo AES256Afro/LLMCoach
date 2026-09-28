@@ -39,6 +39,10 @@ WORKERS: dict[str, str] = {
     "evaluate": "app.workers.evaluate",
 }
 
+# Kinds that redo cleanly from the start, so a restart mid-job requeues them instead of failing
+# them. Indexing replaces a document's passages; training and evaluation are left to the owner.
+RETRY_AFTER_RESTART = {"ingest"}
+
 # Called with the finished Job (any final status, including orphaned-at-startup) so a
 # kind can tidy state its worker didn't get to, e.g. documents left mid-ingest.
 FINISH_HOOKS: dict[str, Callable[[Job], None]] = {}
@@ -64,15 +68,8 @@ class JobManager:
 
     # ---- lifecycle -------------------------------------------------------
     async def start(self) -> None:
+        recover_orphans()
         with Session(engine) as s:
-            # Anything "running" at startup was orphaned by a previous crash/restart.
-            orphans = list(s.exec(select(Job).where(Job.status == JobStatus.running)))
-            for job in orphans:
-                job.status, job.error, job.finished_at = JobStatus.failed, "orphaned by server restart", utcnow()
-                s.add(job)
-            s.commit()
-            for job in orphans:
-                _run_hook(job)
             for job in s.exec(select(Job).where(Job.status == JobStatus.queued).order_by(Job.id)):
                 self._queue.put_nowait(job.id)
         self._task = asyncio.create_task(self._run_loop())
@@ -199,6 +196,30 @@ class JobManager:
             s.refresh(job)
             s.expunge(job)
             return job
+
+
+def recover_orphans() -> None:
+    """Anything "running" at startup was orphaned by a crash or restart (an app update, say).
+    Kinds that are safe to redo go back in the queue, keeping their place ahead of the jobs that
+    wait on them; the rest are failed."""
+    with Session(engine) as s:
+        failed = []
+        for job in s.exec(select(Job).where(Job.status == JobStatus.running)):
+            if job.kind in RETRY_AFTER_RESTART:
+                job.status, job.started_at = JobStatus.queued, None
+                d = job_dir(job.id)
+                d.mkdir(parents=True, exist_ok=True)
+                with open(d / "log.txt", "a", encoding="utf-8") as f:
+                    f.write("\n[restart] the server restarted during this job; starting it again\n")
+                log.info("job #%s (%s) requeued after a restart", job.id, job.kind)
+            else:
+                job.status, job.error, job.finished_at = JobStatus.failed, "orphaned by server restart", utcnow()
+                failed.append(job)
+            s.add(job)
+        s.commit()
+        for job in failed:
+            s.refresh(job)
+            _run_hook(job)
 
 
 def _run_hook(job: Job) -> None:

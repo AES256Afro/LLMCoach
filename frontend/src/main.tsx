@@ -21,6 +21,7 @@ import { preferredStudio } from './studios/registry'
 // Each studio is its own bundle, loaded only when it's opened.
 const ChatStudio = lazy(() => import('./studios/chat/ChatStudio'))
 const MissionStudio = lazy(() => import('./studios/mission/MissionStudio'))
+const CanvasStudio = lazy(() => import('./studios/canvas/CanvasStudio'))
 
 function StudioLoading() {
   return <div className="grid h-full place-items-center text-sm text-muted">Loading studio…</div>
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
   { path: '/chat/:conversationId', element: <Suspense fallback={<StudioLoading />}><ChatStudio /></Suspense> },
   { path: '/console', element: <Suspense fallback={<StudioLoading />}><MissionStudio /></Suspense> },
   { path: '/console/:view', element: <Suspense fallback={<StudioLoading />}><MissionStudio /></Suspense> },
+  { path: '/canvas', element: <Suspense fallback={<StudioLoading />}><CanvasStudio /></Suspense> },
   {
     element: <Layout />,
     children: [

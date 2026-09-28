@@ -169,3 +169,28 @@ def test_file_tail_handles_partial_lines(tmp_path):
     with open(p, "ab") as f:
         f.write(b"o\nthree\n")
     assert tail.read_new() == ["two", "three"]
+
+
+def test_restart_requeues_indexing_and_fails_the_rest(client):
+    """An app update restarts the server mid-job: indexing starts again (ahead of the Q&A job that
+    waits on it); a training run is failed rather than silently started over."""
+    from sqlmodel import Session
+
+    from app.db import Job, JobStatus, engine
+    from app.services.jobs import recover_orphans
+
+    with Session(engine) as s:
+        ingest = Job(kind="ingest", status=JobStatus.running, config={"doc_ids": []})
+        train = Job(kind="train", status=JobStatus.running, config={})
+        s.add_all([ingest, train])
+        s.commit()
+        ingest_id, train_id = ingest.id, train.id
+    recover_orphans()
+    with Session(engine) as s:
+        i, t = s.get(Job, ingest_id), s.get(Job, train_id)
+        assert i.status == JobStatus.queued and i.started_at is None and i.error is None
+        assert t.status == JobStatus.failed and t.error == "orphaned by server restart"
+        # Leave nothing queued for the running queue to pick up.
+        i.status = JobStatus.cancelled
+        s.add(i)
+        s.commit()
