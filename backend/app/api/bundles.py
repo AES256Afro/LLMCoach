@@ -20,8 +20,8 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from ..config import settings
-from ..db import (Conversation, Dataset, DatasetStatus, Document, FineTune, FineTuneStatus, Message, Project,
-                  get_session, utcnow)
+from ..db import (Conversation, Dataset, DatasetStatus, DocStatus, Document, FineTune, FineTuneStatus, Message,
+                  Project, get_session, utcnow)
 from ..services import datasets as ds
 from ..services.modelcard import model_card
 from .knowledge import MAX_FILE_BYTES, store_documents, submit_ingest
@@ -57,7 +57,8 @@ def _write_bundle(project_id: int, adapters: bool, out: Path) -> None:
                 continue
             member = f"documents/{i + 1}_{d.filename}"
             z.write(src, member)
-            manifest["documents"].append({"file": member, "filename": d.filename, "source_url": d.source_url})
+            manifest["documents"].append({"file": member, "filename": d.filename, "source_url": d.source_url,
+                                          "held": d.status == DocStatus.held})
         for d in s.exec(select(Dataset).where(Dataset.project_id == project_id).order_by(Dataset.id)):
             path = ds.dataset_path(project_id, d.id)
             if d.status != DatasetStatus.ready or not path.is_file():
@@ -174,15 +175,20 @@ async def _import(s: Session, bundle: Path) -> dict:
 async def _fill(s: Session, project: Project, manifest: dict, infos: dict, read) -> dict:
     pid = project.id
     # Documents: stored like uploads (the bundle came from a knowledge base, so no privacy hold).
-    items, urls = [], {}
+    items, urls, held = [], {}, set()
     for d in manifest.get("documents", []):
         items.append((d["filename"], read(d["file"], MAX_FILE_BYTES)))
         urls[d["filename"]] = d.get("source_url")
+        if d.get("held"):
+            held.add(d["filename"])
     added, _ = await store_documents(s, pid, items)
     for doc in added:
         if urls.get(doc.filename):
             doc.source_url = urls[doc.filename]
-            s.add(doc)
+        if doc.filename in held:  # it was held back where it came from: it stays held here
+            doc.status = DocStatus.held
+            doc.error = "Held back in the project this came from: it may contain private details. Index it anyway, or remove it."
+        s.add(doc)
     s.commit()
 
     datasets: dict[int, int] = {}
@@ -245,5 +251,5 @@ async def _fill(s: Session, project: Project, manifest: dict, infos: dict, read)
                           thinking=m.get("thinking"), model=m.get("model"), sources=m.get("sources"), stats=m.get("stats")))
         s.commit()
         conversations += 1
-    return {"added_ids": [d.id for d in added], "documents": len(added), "datasets": len(datasets),
+    return {"added_ids": [d.id for d in added if d.status != DocStatus.held], "documents": len(added), "datasets": len(datasets),
             "finetunes": finetunes, "conversations": conversations}
