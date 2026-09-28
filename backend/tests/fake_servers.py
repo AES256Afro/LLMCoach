@@ -108,6 +108,18 @@ def fake_app() -> FastAPI:
         v = app.state.page_version
         return HTMLResponse(f"<title>Changelog</title>" + f"<p>Release {v}: the harbor app now shows ferry times. </p>" * 10)
 
+    @app.get("/pages/sitemap.xml")
+    def sitemap(request: Request):
+        base = str(request.base_url).rstrip("/")
+        return Response(f"""<?xml version="1.0"?><sitemapindex><sitemap><loc>{base}/pages/sitemap-docs.xml</loc></sitemap></sitemapindex>""",
+                        media_type="application/xml")
+
+    @app.get("/pages/sitemap-docs.xml")
+    def sitemap_docs(request: Request):
+        base = str(request.base_url).rstrip("/")
+        locs = "".join(f"<url><loc>{base}/pages/{p}</loc></url>" for p in ("harbor.html", "notes.txt"))
+        return Response(f"<?xml version=\"1.0\"?><urlset>{locs}</urlset>", media_type="application/xml")
+
     @app.get("/pages/notes.txt")
     def notes_page():
         return PlainTextResponse("Opening hours: the harbor office opens at 08:00 on weekdays. " * 10)

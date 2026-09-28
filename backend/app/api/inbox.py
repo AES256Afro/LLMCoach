@@ -163,7 +163,17 @@ async def sync_web(src: Source, root: Path) -> list[str]:
     before = _web_manifest(root)
     now_names: dict[str, str] = {}
     errors = []
+    pages: list[str] = []
     for url in src.urls or []:
+        if not web.is_sitemap(url):
+            pages.append(url)
+            continue
+        try:  # a sitemap stands for the pages it lists
+            pages += await web.sitemap_pages(url, MAX_WEB_PAGES)
+        except web.WebError as e:
+            errors.append(str(e))
+            pages += [u for u in before if u not in pages]  # keep what it listed last time
+    for url in list(dict.fromkeys(pages))[:MAX_WEB_PAGES]:
         try:
             name, data, _ = await web.fetch(url, MAX_FILE_BYTES)
         except web.WebError as e:
