@@ -885,6 +885,29 @@ export function uploadDocuments(pid: number, files: File[], onProgress: (fractio
   })
 }
 
+export interface ImportResult {
+  project: Project
+  documents: number
+  datasets: number
+  finetunes: number
+  conversations: number
+  ingest_job_id: number | null
+}
+
+/** Creates a project from a bundle made by "Download" on another LLMCoach. */
+export async function importProject(file: File): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const r = await fetch('/api/projects/import', { method: 'POST', body: form, credentials: 'same-origin' })
+  if (r.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  if (!r.ok) {
+    let detail = r.statusText
+    try { detail = errorDetail((await r.json()).detail) ?? detail } catch { /* not json */ }
+    throw new Error(`${r.status}: ${detail}`)
+  }
+  return r.json()
+}
+
 export function wsUrl(path: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}${path}`
