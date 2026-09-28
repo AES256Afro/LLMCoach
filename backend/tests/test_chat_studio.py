@@ -43,6 +43,43 @@ def test_remember_drop_indexes_files_and_text(client):
     assert empty.status_code == 400
 
 
+def test_private_looking_files_are_held_back(client):
+    pid = client.post("/api/projects", json={"name": "studio-held"}).json()["id"]
+    contacts = "\n".join(f"Customer {i}: person{i}@example.com" for i in range(8)).encode() + b"\n\n" + _text(2, "CRM")
+    r = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},
+                    files=[("files", ("contacts.md", io.BytesIO(contacts), "text/markdown")),
+                           ("files", ("faq.md", io.BytesIO(_text(3, "FAQ")), "text/markdown"))])
+    card = r.json()["message"]["data"]
+    assert [d["filename"] for d in card["documents"]] == ["faq.md"]
+    held = card["held"]
+    assert [h["filename"] for h in held] == ["contacts.md"] and held[0]["findings"][0]["kind"] == "emails"
+    wait_final(client, card["ingest_job_id"])
+    wait_final(client, card["learn"]["job_id"])
+    docs = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs["contacts.md"]["status"] == "held"  # stored, but nothing can quote it
+    assert docs["contacts.md"]["error"].startswith("Held back: may contain list of email addresses")
+    assert docs["faq.md"]["status"] == "ready"
+
+    # "Index anyway" is an ordinary re-index of that one document.
+    job = client.post(f"/api/projects/{pid}/documents/reindex", json={"doc_ids": [held[0]["doc_id"]]}).json()
+    assert wait_final(client, job["id"])["status"] == "done"
+    docs = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs["contacts.md"]["status"] == "ready"
+
+    # Only held back, nothing else: the conversation title says so. The Classic upload holds too,
+    # and check=false skips the check.
+    only = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "remember"},
+                       files=[("files", ("keys.md", io.BytesIO(b"password = hunter2hunter2\n" + _text(1, "Ops")), "text/markdown"))]).json()
+    assert only["conversation"]["title"] == "Held back 1 file: it looks private"
+    up = client.post(f"/api/projects/{pid}/documents", files=[("files", ("keys2.md", io.BytesIO(b"token: sk-" + b"a" * 40), "text/markdown"))]).json()
+    assert up["job"] is None and up["held"][0]["filename"] == "keys2.md"
+    assert client.delete(f"/api/projects/{pid}/documents/{up['held'][0]['doc_id']}").status_code == 204  # "Remove"
+    free = client.post(f"/api/projects/{pid}/documents?check=false",
+                       files=[("files", ("keys3.md", io.BytesIO(b"password = hunter3hunter3\n" + _text(1, "Ops2")), "text/markdown"))]).json()
+    assert free["held"] == [] and free["job"] is not None
+    wait_final(client, free["job"]["id"])
+
+
 def test_learn_drop_appends_and_keeps_splits(client, fake):
     pid = client.post("/api/projects", json={"name": "studio-learn"}).json()["id"]
     first = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},

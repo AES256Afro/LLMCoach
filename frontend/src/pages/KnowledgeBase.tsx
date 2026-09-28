@@ -3,6 +3,7 @@ import {
   api, uploadDocuments,
   type Chunk, type DocStatus, type KBDocument, type KnowledgeStats, type SearchHit, type UploadResult,
 } from '../api'
+import { HeldFiles } from '../components/HeldFiles'
 import { JobProgress } from '../components/JobProgress'
 import { PageHeader } from '../components/Layout'
 import { ModelSelect } from '../components/ModelSelect'
@@ -154,7 +155,10 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
       {error && <div className="mt-3 text-sm text-bad">{error}</div>}
       {result && (
         <div className="mt-3 space-y-1 text-xs">
-          {result.documents.length > 0 && <div className="text-ok">Added {result.documents.length} document(s); indexing started.</div>}
+          {result.documents.length - result.held.length > 0 && (
+            <div className="text-ok">Added {result.documents.length - result.held.length} document(s); indexing started.</div>
+          )}
+          {result.held.length > 0 && <HeldFiles pid={pid} held={result.held} onChange={() => onUploaded(result)} />}
           {result.skipped.map((s) => (
             <div key={s.filename} className="text-warn">Skipped {s.filename}: {s.reason}</div>
           ))}
@@ -237,6 +241,7 @@ const DOC_STYLE: Record<DocStatus, string> = {
   ingesting: 'bg-accent/15 text-accent',
   ready: 'bg-ok/15 text-ok',
   failed: 'bg-bad/15 text-bad',
+  held: 'bg-warn/15 text-warn',
 }
 
 function DocumentTable({ docs, selected, onSelect, onDelete, onReindex }: {
@@ -249,7 +254,7 @@ function DocumentTable({ docs, selected, onSelect, onDelete, onReindex }: {
   if (!docs.length) return <Empty>No documents yet. Add some above.</Empty>
   return (
     <div className="overflow-x-auto">
-    <table className="w-full min-w-[36rem] text-sm">
+    <table className="w-full min-w-[40rem] text-sm [&_td+td]:pl-4 [&_th+th]:pl-4">
       <thead className="text-left text-xs text-muted">
         <tr>
           <th className="pb-2 font-normal">Document</th>
@@ -268,7 +273,7 @@ function DocumentTable({ docs, selected, onSelect, onDelete, onReindex }: {
                       className="text-left hover:text-accent disabled:hover:text-text" title="Browse chunks">
                 {d.filename}
               </button>
-              {d.error && <div className="text-xs text-bad">{d.error}</div>}
+              {d.error && <div className={`text-xs ${d.status === 'held' ? 'text-warn' : 'text-bad'}`}>{d.error}</div>}
             </td>
             <td className="py-2">
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${DOC_STYLE[d.status]}`}>
@@ -277,11 +282,13 @@ function DocumentTable({ docs, selected, onSelect, onDelete, onReindex }: {
               </span>
             </td>
             <td className="py-2 text-right font-mono">{d.chunk_count || '—'}</td>
-            <td className="py-2 text-right font-mono text-muted">{fmtBytes(d.size_bytes)}</td>
-            <td className="py-2 text-muted">{d.ingested_at ? fmtTime(d.ingested_at) : '—'}</td>
+            <td className="whitespace-nowrap py-2 text-right font-mono text-muted">{fmtBytes(d.size_bytes)}</td>
+            <td className="whitespace-nowrap py-2 text-muted">{d.ingested_at ? fmtTime(d.ingested_at) : '—'}</td>
             <td className="py-2 text-right text-xs whitespace-nowrap">
               <button onClick={() => onReindex(d)} disabled={d.status === 'ingesting' || d.status === 'pending'}
-                      className="mr-3 text-muted hover:text-text disabled:opacity-30">Re-index</button>
+                      className={`mr-3 disabled:opacity-30 ${d.status === 'held' ? 'text-accent hover:underline' : 'text-muted hover:text-text'}`}>
+                {d.status === 'held' ? 'Index anyway' : 'Re-index'}
+              </button>
               <button onClick={() => onDelete(d)} disabled={d.status === 'ingesting'}
                       className="text-bad/80 hover:text-bad disabled:opacity-30">Delete</button>
             </td>

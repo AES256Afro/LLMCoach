@@ -78,6 +78,7 @@ class DocStatus(str, Enum):
     ingesting = "ingesting"
     ready = "ready"
     failed = "failed"
+    held = "held"  # stored but not indexed: looks like it holds secrets or personal data
 
 
 class Document(SQLModel, table=True):
