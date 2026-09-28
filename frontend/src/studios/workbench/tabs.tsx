@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api, defaultModel, type Chunk, type EvalRun, type JobEvent, type ModelRef, type PipelineGraph, type SearchHit, type Split, type TrainPlan } from '../../api'
 import { metricRows } from '../../components/LossChart'
 import { stripAnsi } from '../../components/ansi'
@@ -233,6 +235,7 @@ export function FinetuneTab({ g, id, open, setOutput, say }: TabProps & { id: nu
   const pid = g.project.id
   const ft = g.finetunes.find((x) => x.id === id)
   const [against, setAgainst] = useState<number | ''>('')
+  const [card, setCard] = useState<string | null>(null)
   const { events } = useJobStream(ft?.job_id ?? null)
   useEffect(() => { setOutput(ft?.job_id ?? null) }, [ft?.job_id, setOutput])
   if (!ft) return <div className="wb-empty">fine-tune #{id} is gone</div>
@@ -265,9 +268,20 @@ export function FinetuneTab({ g, id, open, setOutput, say }: TabProps & { id: nu
           <button className="wb-btn" onClick={promote} disabled={ft.status !== 'ready'}>{ft.promoted_at ? 'unset current' : 'make current'}</button>
           <button className="wb-btn" onClick={sendToOllama} disabled={ft.status !== 'ready' || exporting}>{exporting ? 'exporting…' : ft.ollama_model ? 're-export to ollama' : 'send to ollama'}</button>
           {ft.ollama_model && <a className="wb-btn" href={`/chat?model=${encodeURIComponent(ft.ollama_model)}`}>chat with it</a>}
+          <button className="wb-btn" onClick={async () => { try { setCard(await api.finetuneCard(pid, ft.id)) } catch (e) { say(errText(e)) } }}>model card</button>
           <button className="wb-btn pri" onClick={() => open(`new-finetune:from-${ft.id}`)}>re-run with new settings</button>
         </span>
       </Toolbar>
+      {card != null && (
+        <div className="wb-card-over" role="dialog" aria-label="Model card">
+          <div className="wb-card-bar">
+            <span className="wb-mono">model card · README.md</span>
+            <button className="wb-btn ml-auto" onClick={() => { navigator.clipboard.writeText(card).then(() => say('model card copied'), () => say('copy failed')) }}>copy markdown</button>
+            <button className="wb-btn" onClick={() => setCard(null)}>close</button>
+          </div>
+          <div className="wb-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{card}</ReactMarkdown></div>
+        </div>
+      )}
       <div className="wb-split">
         <div className="wb-cfg w-[380px] flex-none overflow-y-auto border-r border-[var(--ln)] py-3">
           <div className="mb-2 flex flex-wrap items-center gap-2 px-4 text-[10.5px] tracking-[.09em] text-[var(--mu)]">

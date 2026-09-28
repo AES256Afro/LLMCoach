@@ -769,6 +769,11 @@ export const api = {
     request<NotifyConfig>('/api/notify', { method: 'PUT', body: JSON.stringify(body) }),
   testNotify: () => request<{ ok: boolean }>('/api/notify/test', { method: 'POST' }),
   pipeline: (pid: number) => request<PipelineGraph>(`/api/projects/${pid}/pipeline`),
+  finetuneCard: async (pid: number, ftId: number): Promise<string> => {
+    const r = await fetch(`/api/projects/${pid}/finetunes/${ftId}/card`, { credentials: 'same-origin' })
+    if (!r.ok) throw new Error(`${r.status}: couldn't write the model card`)
+    return r.text()
+  },
   exportFinetune: (pid: number, ftId: number, body: { name?: string; quantize?: 'q8_0' | 'q4_K_M' | null } = {}) =>
     request<{ job: Job; model: string }>(`/api/projects/${pid}/finetunes/${ftId}/export`, { method: 'POST', body: JSON.stringify(body) }),
   runPipeline: (pid: number) => request<PipelineRunResult>(`/api/projects/${pid}/pipeline/run`, { method: 'POST' }),

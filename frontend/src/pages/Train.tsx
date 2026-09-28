@@ -120,6 +120,7 @@ export function Train() {
                     <td className="whitespace-nowrap py-2 text-muted">{fmtTime(f.created_at)}</td>
                     <td className="whitespace-nowrap py-2 text-right text-xs">
                       {f.job_id && <Link to={`/jobs/${f.job_id}`} className="mr-3 text-accent hover:underline">Charts & logs</Link>}
+                      {f.status === 'ready' && <a href={`/api/projects/${project.id}/finetunes/${f.id}/card`} target="_blank" rel="noreferrer" className="mr-3 text-accent hover:underline">Card</a>}
                       {f.status === 'ready' && (f.ollama_model
                         ? <Link to={`/chat?model=${encodeURIComponent(f.ollama_model)}`} className="mr-3 text-accent hover:underline">Chat with it</Link>
                         : <button className="mr-3 text-accent hover:underline" title="Merge the adapter into its base model and add it to Ollama"
