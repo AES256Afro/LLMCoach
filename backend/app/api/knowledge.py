@@ -263,9 +263,11 @@ async def retrieve(session: Session, project: Project, query: str, top_k: int | 
         hits, mode = await asyncio.to_thread(kb.search, project.id, vec, k, doc_ids, text=text)
     except kb.KBError as e:
         raise HTTPException(409, str(e))
-    names = {d.id: d.filename for d in session.exec(select(Document).where(Document.project_id == project.id))}
+    docs = {d.id: d for d in session.exec(select(Document).where(Document.project_id == project.id))}
     for h in hits:
-        h["filename"] = names.get(h["doc_id"], f"document {h['doc_id']}")
+        d = docs.get(h["doc_id"])
+        h["filename"] = d.filename if d else f"document {h['doc_id']}"
+        h["source_url"] = d.source_url if d else None  # web pages link back to where they came from
     return {"results": hits, "mode": mode, "embed_ms": round(embed_ms),
             "total_ms": round((time.perf_counter() - started) * 1000)}
 

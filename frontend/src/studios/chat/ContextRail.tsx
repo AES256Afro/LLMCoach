@@ -95,6 +95,10 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
             <small className="mt-2 block text-[11px] text-muted">
               passage {selected.hit.chunk_index + 1}{selected.hit.page != null ? ` · page ${selected.hit.page}` : ''}
               {s?.retrieval_ms != null ? ` · retrieved in ${s.retrieval_ms} ms` : ''}
+              {selected.hit.source_url && (
+                <a href={selected.hit.source_url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-accent hover:underline"
+                   title={selected.hit.source_url}>Open the page ↗</a>
+              )}
             </small>
           </div>
         </Section>

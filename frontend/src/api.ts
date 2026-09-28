@@ -161,6 +161,7 @@ export interface SearchHit {
   page: number | null
   text: string
   score: number
+  source_url?: string | null // set for pages fetched from the web
 }
 
 export interface Chunk {
