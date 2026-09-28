@@ -511,6 +511,17 @@ function Loop({ pid }: { pid: number }) {
                    onBlur={(e) => Number(e.target.value) !== loop.margin && save({ margin: Number(e.target.value) })} />
           </Field>
         </div>
+        <label className="mt-4 flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={loop.export_on_promote}
+                 onChange={(e) => save({ export_on_promote: e.target.checked })} />
+          <span>
+            Keep a chat model up to date with the promoted adapter
+            <span className="block text-[11px] text-muted">
+              After each promotion, <code className="font-mono">{state.current_model}</code> is rebuilt in Ollama from it (a minute
+              or two on a CPU). Chats set to that model always get the best version so far.
+            </span>
+          </span>
+        </label>
         {error && <p className="mt-3 text-xs text-bad">{error}</p>}
       </Card>
 

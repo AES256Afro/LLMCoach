@@ -390,6 +390,33 @@ def test_loop_promotes_only_a_better_adapter(client):
     assert not any(f["promoted_at"] for f in state["registry"])
 
 
+def test_loop_keeps_a_current_model_in_ollama(client, monkeypatch):
+    submitted = []
+    # Record the export instead of running it: the worker would merge a real base model.
+    monkeypatch.setattr(loop_api, "submit_export", lambda s, pid, ft, name, quantize="q8_0": submitted.append((ft.id, name)))
+    pid = _project(client, "Loop Export")
+    ds_id = _dataset(pid, rows=40, test=5)
+    first = _ready_ft(pid, "first")
+    with Session(engine) as s:
+        ft = s.get(FineTune, first)
+        ft.output_dir = f"finetunes/{first}/adapter"
+        s.add(ft)
+        run = LoopRun(project_id=pid, dataset_id=ds_id, rows=40, finetune_id=first)
+        s.add(run)
+        s.commit()
+        run_id = run.id
+    state = client.put(f"/api/projects/{pid}/loop", json={"export_on_promote": True}).json()
+    assert state["loop"]["export_on_promote"] is True and state["current_model"] == "ollama/llmcoach-loop-export-current"
+    r = _eval_outcome(pid, run_id, {"New adapter": {"f1": 0.4}})
+    assert r["status"] == "promoted" and r["reason"].endswith("Rebuilding ollama/llmcoach-loop-export-current from it.")
+    assert submitted == [(first, "llmcoach-loop-export-current")]
+    client.post(f"/api/projects/{pid}/finetunes/{first}/promote")  # promoting by hand rebuilds it too
+    assert len(submitted) == 2
+    client.put(f"/api/projects/{pid}/loop", json={"export_on_promote": False})
+    client.post(f"/api/projects/{pid}/finetunes/{first}/promote")
+    assert len(submitted) == 2
+
+
 def test_loop_failed_training_ends_the_run(client):
     pid = _project(client, "loop-fail")
     ft = _ready_ft(pid, "broken")

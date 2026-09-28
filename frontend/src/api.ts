@@ -538,6 +538,7 @@ export interface LearningLoop {
   min_new_rows: number
   margin: number
   max_examples: number
+  export_on_promote: boolean // keep ollama/llmcoach-<project>-current built from the promoted adapter
   last_rows: number
   last_run_at: string | null
   next_run_at: string | null
@@ -604,6 +605,7 @@ export interface LoopState {
   loop: LearningLoop
   dataset: { id: number; name: string; rows: number; splits: Record<Split, number> | null; status: string } | null
   recommended_base_model: string
+  current_model: string | null // the Ollama model export_on_promote keeps up to date
   runs: LoopRun[]
   registry: RegistryEntry[]
 }
