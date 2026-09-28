@@ -315,6 +315,22 @@ function Knowledge({ g, changed }: { g: PipelineGraph; changed: () => void }) {
     reload()
     changed()
   }
+  const [url, setUrl] = useState('')
+  const [fetching, setFetching] = useState(false)
+  const addPage = async (e: FormEvent) => {
+    e.preventDefault()
+    setFetching(true)
+    try {
+      const r = await api.addUrl(pid, url.trim())
+      setSaid(r.documents.length && !r.held.length ? `Added “${r.documents[0].filename}”. Your bot can use it in about a minute.`
+        : r.held.length ? 'I held that page back: it looks like it has passwords or personal details.'
+        : r.skipped.length ? `Skipped: ${r.skipped[0].reason}.` : 'Nothing new on that page.')
+      setUrl('')
+    } catch (err) { setSaid(errText(err)) }
+    setFetching(false)
+    reload()
+    changed()
+  }
   return (
     <div className="fr-page">
       <div className="fr-card fr-hero">
@@ -329,13 +345,17 @@ function Knowledge({ g, changed }: { g: PipelineGraph; changed: () => void }) {
             {progress != null ? `Adding… ${Math.round(progress * 100)}%` : '+ Drop documents here, or click to choose'}
           </button>
           <input ref={input} type="file" multiple className="hidden" onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
+          <form className="mt-3 flex gap-2" onSubmit={addPage}>
+            <input className="fr-url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Or paste a web page address" />
+            <button className="fr-btn soft" disabled={!url.trim() || fetching}>{fetching ? 'Reading…' : 'Add page'}</button>
+          </form>
           {said && <p className="fr-say mt-3">{said}</p>}
           <div className="mt-2">
             {docs?.map((d) => (
               <div key={d.id} className="fr-doc">
                 <FileBadge name={d.filename} />
-                <div className="min-w-0"><b>{d.filename}</b><small>{d.status === 'ready' ? `${d.chunk_count} pieces` : d.status === 'failed' ? "couldn't be read: it may be a scan without text" : 'reading…'}</small></div>
-                {d.status === 'ready' ? <Check className="ok h-4 w-4" /> : d.status !== 'failed' && <Loader2 className="ml-auto h-4 w-4 animate-spin text-[var(--mu)]" />}
+                <div className="min-w-0"><b>{d.filename}</b><small>{d.status === 'ready' ? `${d.chunk_count} pieces` : d.status === 'failed' ? "couldn't be read" : d.status === 'held' ? 'waiting for your OK: it may be private' : 'reading…'}</small></div>
+                {d.status === 'ready' ? <Check className="ok h-4 w-4" /> : d.status !== 'failed' && d.status !== 'held' && <Loader2 className="ml-auto h-4 w-4 animate-spin text-[var(--mu)]" />}
               </div>
             ))}
           </div>
@@ -412,7 +432,7 @@ function Train({ g, changed }: { g: PipelineGraph; changed: () => void }) {
     setBusy(false)
   }
   const exporting = new Set(g.active_jobs.filter((j) => j.kind === 'export').map((j) => Number(j.config.finetune_id)))
-  const useInChat = async (id: number) => {
+  const readyForChat = async (id: number) => {
     try { await api.exportFinetune(pid, id); setSaid('Getting this version ready to chat with. It takes a minute or two.'); changed() } catch (e) { setSaid(errText(e)) }
   }
   const teach = async () => {
@@ -472,7 +492,7 @@ function Train({ g, changed }: { g: PipelineGraph; changed: () => void }) {
               <div className="min-w-0"><b>Version {versions.length - i}</b><small>{v.promoted_at ? 'in use · ' : ''}{v.finished_at ? new Date(v.finished_at + (v.finished_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</small></div>
               {v.ollama_model
                 ? <a className="fr-btn soft ml-auto !px-3 !py-1.5 text-xs" href={`/friendly/chat?model=${encodeURIComponent(v.ollama_model)}`}>Chat with it</a>
-                : <button className="fr-btn soft ml-auto !px-3 !py-1.5 text-xs" disabled={exporting.has(v.id)} onClick={() => useInChat(v.id)}>{exporting.has(v.id) ? 'Getting ready…' : 'Use in chat'}</button>}
+                : <button className="fr-btn soft ml-auto !px-3 !py-1.5 text-xs" disabled={exporting.has(v.id)} onClick={() => readyForChat(v.id)}>{exporting.has(v.id) ? 'Getting ready…' : 'Use in chat'}</button>}
             </div>
           ))}
         </div>

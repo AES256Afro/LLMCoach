@@ -64,6 +64,22 @@ export function DocumentsStep({ g, changed }: { g: PipelineGraph; changed: () =>
   const [said, setSaid] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const [url, setUrl] = useState('')
+  const [fetching, setFetching] = useState(false)
+  const addPage = async (e: FormEvent) => {
+    e.preventDefault()
+    setFetching(true)
+    try {
+      const r = await api.addUrl(pid, url.trim())
+      const d = r.documents[0]
+      setSaid(r.held.length ? `Held back ${r.held[0].filename}: it looks private. Index or remove it on the Knowledge page.`
+        : d ? `Added “${d.filename}” from ${url.trim()}. It's being read now.` : r.skipped.length ? `Skipped: ${r.skipped[0].reason}.` : 'Nothing new.')
+      setUrl('')
+    } catch (err) { setSaid(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err)) }
+    setFetching(false)
+    reload()
+    changed()
+  }
   const upload = async (files: File[]) => {
     if (!files.length) return
     setProgress(0)
@@ -90,6 +106,11 @@ export function DocumentsStep({ g, changed }: { g: PipelineGraph; changed: () =>
            className="nb-noprint mt-6 rounded border border-dashed border-[#bfc2ba] px-4 py-6 text-center text-[13px] text-[var(--mu)]">
         {progress != null ? `Uploading… ${Math.round(progress * 100)}%` : <>Drop documents here, or <button className="nb-link" onClick={() => input.current?.click()}>choose files</button></>}
         <input ref={input} type="file" multiple className="hidden" onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
+        <form className="mt-3 flex gap-2" onSubmit={addPage}>
+          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="or a web page: https://…"
+                 className="min-w-0 flex-1 rounded border border-[#d5d7cf] bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-[var(--acc,#1e5a4b)]" />
+          <button className="nb-link text-[13px] disabled:opacity-40" disabled={!url.trim() || fetching}>{fetching ? 'reading…' : 'add page'}</button>
+        </form>
       </div>
       <Said text={said} />
       <ul className="mt-4">
