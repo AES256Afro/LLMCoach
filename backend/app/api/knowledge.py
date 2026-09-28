@@ -174,6 +174,8 @@ def reindex(project_id: int, body: Reindex, session: Session = Depends(get_sessi
     if body.doc_ids is not None:
         wanted = set(body.doc_ids)
         docs = [d for d in docs if d.id in wanted]
+    else:
+        docs = [d for d in docs if d.status != DocStatus.held]  # "re-index all" doesn't overrule a hold
     if not docs:
         raise HTTPException(400, "no documents to re-index")
     return _submit_ingest(session, project, [d.id for d in docs], reset=body.doc_ids is None)
