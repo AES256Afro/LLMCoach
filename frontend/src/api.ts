@@ -351,6 +351,7 @@ export interface FineTune {
   created_at: string
   finished_at: string | null
   promoted_at: string | null
+  ollama_model: string | null // "ollama/<name>" once exported, usable as a chat model
 }
 
 export interface FineTuneRequest {
@@ -570,7 +571,7 @@ export interface PipelineGraph {
   knowledge: { chunks: number; embed_model: string }
   chat: { conversations: number; model: string | null; last_title: string | null; last_id: number | null }
   datasets: { id: number; name: string; source: Dataset['source']; status: Dataset['status']; rows: number; splits: Record<Split, number> | null; job_id: number | null }[]
-  finetunes: (Pick<FineTune, 'id' | 'name' | 'base_model' | 'dataset_id' | 'status' | 'job_id' | 'promoted_at' | 'metrics' | 'method' | 'config' | 'finished_at'>)[]
+  finetunes: (Pick<FineTune, 'id' | 'name' | 'base_model' | 'dataset_id' | 'status' | 'job_id' | 'promoted_at' | 'metrics' | 'method' | 'config' | 'finished_at' | 'ollama_model'>)[]
   evals: (Pick<EvalRun, 'id' | 'name' | 'dataset_id' | 'status' | 'variants' | 'summary' | 'job_id'>)[]
   loop: LearningLoop & { dataset_id_effective: number | null; pending_run: boolean; runs: LoopRun[] }
   active_jobs: { id: number; kind: string; status: JobStatus; config: Record<string, unknown> }[]
@@ -727,6 +728,8 @@ export const api = {
     request<NotifyConfig>('/api/notify', { method: 'PUT', body: JSON.stringify(body) }),
   testNotify: () => request<{ ok: boolean }>('/api/notify/test', { method: 'POST' }),
   pipeline: (pid: number) => request<PipelineGraph>(`/api/projects/${pid}/pipeline`),
+  exportFinetune: (pid: number, ftId: number, body: { name?: string; quantize?: 'q8_0' | 'q4_K_M' | null } = {}) =>
+    request<{ job: Job; model: string }>(`/api/projects/${pid}/finetunes/${ftId}/export`, { method: 'POST', body: JSON.stringify(body) }),
   runPipeline: (pid: number) => request<PipelineRunResult>(`/api/projects/${pid}/pipeline/run`, { method: 'POST' }),
 }
 

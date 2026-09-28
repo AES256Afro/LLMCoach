@@ -8,7 +8,7 @@ import type { AppLog } from '../../api'
 import { parseUtc } from '../../components/ui'
 import { usePolling } from '../../hooks/usePolling'
 import { useJobStream } from '../../hooks/streams'
-import { useChatSession } from '../chat/useChatSession'
+import { startingConversation, useChatSession } from '../chat/useChatSession'
 import { Blocks, LogTail, LossChart, Meter, Tile, gb, mmss, type Series } from './tiles'
 
 export interface Mission {
@@ -162,7 +162,7 @@ function ChatTile({ m, style }: { m: Mission; style?: React.CSSProperties }) {
   useEffect(() => {
     if (!opened && !active && session.conversations.length) {
       setOpened(true)
-      session.open(session.conversations[0].id)
+      session.open(startingConversation(session.conversations)!)
     }
   }, [opened, active, session])
   const model = settings.model ?? active?.model ?? [...models].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? null
