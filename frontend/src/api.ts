@@ -715,6 +715,7 @@ export const api = {
   updateProject: (id: number, patch: { name?: string; description?: string; settings?: Partial<ProjectSettings> }) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+  health: () => request<{ ok: boolean; version: string }>('/api/health'),
   inbox: () => request<InboxInfo>('/api/inbox'),
   sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
   createSource: (pid: number, body: { name?: string; kind?: 'folder' | 'bucket'; folder?: string; endpoint?: string; bucket?: string; prefix?: string

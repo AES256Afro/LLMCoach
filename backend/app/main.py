@@ -71,7 +71,7 @@ app.include_router(pipeline.router)
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True}
+    return {"ok": True, "version": settings.version}
 
 
 class SPAStaticFiles(StaticFiles):

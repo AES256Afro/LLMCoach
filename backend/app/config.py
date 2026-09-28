@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLMCOACH_", env_file=".env", extra="ignore")
 
     data_dir: Path = Path(__file__).resolve().parents[2] / "data"
+    version: str = "dev"  # stamped into published images (LLMCOACH_VERSION), e.g. "0.8.0" or "0.8.0-cuda"
     host: str = "0.0.0.0"
     port: int = 8000
     ollama_url: str = "http://localhost:11434"

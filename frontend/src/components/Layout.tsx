@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom'
+import { api } from '../api'
 import { useSystemStream } from '../hooks/streams'
 import { useAuth } from './AuthGate'
 import { ProjectSwitcher } from './ProjectSwitcher'
@@ -27,6 +28,8 @@ export function Layout() {
   const gpu = stats?.gpus[0]
   const auth = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => { api.health().then((h) => setVersion(h.version)).catch(() => {}) }, [])
   const location = useLocation()
 
   // Close the mobile menu after navigating.
@@ -74,6 +77,7 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${connected ? 'bg-ok' : 'bg-bad'}`} />
             {connected ? 'Connected' : 'Disconnected'}
+            {version && <span className="ml-auto font-mono text-[10.5px] text-muted/70" title="LLMCoach version">{version === 'dev' ? 'dev' : `v${version}`}</span>}
           </div>
           {gpu ? (
             <div className="truncate" title={gpu.name}>
