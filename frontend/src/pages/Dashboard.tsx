@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { JobTable } from '../components/JobTable'
+import { ProjectBundle } from '../components/ProjectBundle'
 import { PageHeader, useSystem } from '../components/Layout'
 import { ProvidersPanel } from '../components/ProvidersPanel'
 import { SystemPanel } from '../components/SystemPanel'
@@ -35,6 +36,7 @@ export function Dashboard() {
         <Card title="Recent jobs">
           <JobTable jobs={jobs ?? []} />
         </Card>
+        <ProjectBundle />
       </div>
     </>
   )
