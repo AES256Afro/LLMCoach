@@ -93,6 +93,7 @@ class Document(SQLModel, table=True):
     char_count: int = 0
     embed_model: str | None = None  # model the stored vectors came from
     error: str | None = None
+    source_url: str | None = None  # the web address it was fetched from, if any
     created_at: datetime = Field(default_factory=utcnow)
     ingested_at: datetime | None = None
 

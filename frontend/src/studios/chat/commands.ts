@@ -8,8 +8,8 @@ export interface Command {
 }
 
 export const COMMANDS: Command[] = [
-  { name: 'add', description: 'Add files to the knowledge base' },
-  { name: 'learn', args: '[all]', description: 'Pick files to learn from, or "all" for the whole knowledge base' },
+  { name: 'add', args: '[web address]', description: 'Add files, or a web page, to the knowledge base' },
+  { name: 'learn', args: '[all | web address]', description: 'Pick files to learn from, a web page, or "all" for the whole knowledge base' },
   { name: 'train', args: '[base model]', description: 'Fine-tune a model on what the chat has learned' },
   { name: 'compare', description: 'Score the model with and without your documents, and your latest fine-tune' },
   { name: 'model', args: '<name>', description: 'Switch the chat model' },
@@ -51,6 +51,8 @@ export interface CommandContext {
   goClassic: () => void
 }
 
+const isUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim())
+
 function trainable(datasets: Dataset[]): Dataset | null {
   const ready = datasets.filter((d) => d.status === 'ready' && (d.splits?.train ?? 0) > 0)
   return ready.find((d) => d.source === 'chat') ?? ready[0] ?? null
@@ -77,6 +79,7 @@ export async function runCommand(ctx: CommandContext, name: string, args: string
         ctx.goClassic()
         return
       case 'add':
+        if (isUrl(args)) return session.attachUrl(args, 'remember')
         ctx.pickFiles('remember')
         return
       case 'kb': {
@@ -99,6 +102,7 @@ export async function runCommand(ctx: CommandContext, name: string, args: string
         return
       }
       case 'learn': {
+        if (isUrl(args)) return session.attachUrl(args, 'learn')
         if (!/^(all|kb|everything)$/i.test(args)) {
           ctx.pickFiles('learn')
           return

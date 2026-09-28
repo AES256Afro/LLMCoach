@@ -138,6 +138,7 @@ export interface KBDocument {
   char_count: number
   embed_model: string | null
   error: string | null
+  source_url: string | null // the web address it was fetched from, if any
   created_at: string
   ingested_at: string | null
 }
@@ -650,6 +651,8 @@ export const api = {
     request<ReachStatus>('/api/providers/test', { method: 'POST', body: JSON.stringify(body) }),
   documents: (pid: number) => request<KBDocument[]>(`/api/projects/${pid}/documents`),
   knowledge: (pid: number) => request<KnowledgeStats>(`/api/projects/${pid}/knowledge`),
+  addUrl: (pid: number, url: string) =>
+    request<UploadResult>(`/api/projects/${pid}/documents/url`, { method: 'POST', body: JSON.stringify({ url }) }),
   deleteDocument: (pid: number, id: number) => request<void>(`/api/projects/${pid}/documents/${id}`, { method: 'DELETE' }),
   reindex: (pid: number, doc_ids?: number[]) =>
     request<Job>(`/api/projects/${pid}/documents/reindex`, { method: 'POST', body: JSON.stringify({ doc_ids: doc_ids ?? null }) }),
@@ -830,7 +833,7 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
 
 /** Files dropped (or text pasted) into a chat: remembered, or also learned from. */
 export function attachToChat(pid: number, opts: {
-  files: File[]; mode: AttachMode; text?: string; title?: string; conversationId?: number; model?: string
+  files: File[]; mode: AttachMode; text?: string; title?: string; url?: string; conversationId?: number; model?: string
 }, onProgress: (fraction: number) => void = () => {}): Promise<AttachResult> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
@@ -840,6 +843,7 @@ export function attachToChat(pid: number, opts: {
     if (opts.title) form.append('title', opts.title)
     if (opts.conversationId != null) form.append('conversation_id', String(opts.conversationId))
     if (opts.model) form.append('model', opts.model)
+    if (opts.url) form.append('url', opts.url)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `/api/projects/${pid}/chat/attach`)
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)

@@ -230,9 +230,28 @@ export function useChatSession(project: Project | null) {
     }
   }, [pid, active, settings.model, reload, loadList, send, note])
 
+  /** /add <url> and /learn <url>: the server fetches the page and treats it like a dropped file. */
+  const attachUrl = useCallback(async (url: string, mode: AttachMode) => {
+    if (pid == null) return
+    const my = view.current
+    setBusy(`Fetching ${url}…`)
+    try {
+      const r = await attachToChat(pid, { files: [], url, mode, conversationId: active?.id, model: settings.model ?? undefined })
+      if (view.current !== my) return
+      setBusy(null)
+      await reload(r.conversation.id)
+      loadList().catch(() => {})
+    } catch (err) {
+      if (view.current === my) {
+        setBusy(null)
+        note('error', err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
+      }
+    }
+  }, [pid, active, settings.model, reload, loadList, note])
+
   return {
     conversations, active, pending, streaming, local, busy, settings, setSettings,
-    open, newChat, remove, send, stop, attach, addEvent, ensureConversation, reload, note, loadList,
+    open, newChat, remove, send, stop, attach, attachUrl, addEvent, ensureConversation, reload, note, loadList,
     clearLocal: () => setLocal([]),
   }
 }

@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from ..config import settings
 from ..db import Document, DocStatus, Job, JobStatus, Project, engine, get_session
-from ..services import kb
+from ..services import kb, web
 from ..services import scan as scanner
 from ..services.jobs import FINISH_HOOKS, manager
 from ..services.parsing import SUPPORTED, ParseError, parse
@@ -76,6 +76,26 @@ async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
     return {"documents": added, "skipped": skipped, "held": held, "job": job}
 
 
+class AddUrl(BaseModel):
+    url: str
+
+
+@router.post("/documents/url", status_code=201)
+async def add_url(project_id: int, body: AddUrl, check: bool = True, session: Session = Depends(get_session)) -> dict:
+    """Fetches a web page (or a PDF or text file by its address) and adds it like an upload."""
+    project = get_project_or_404(session, project_id)
+    try:
+        name, data, final = await web.fetch(body.url, MAX_FILE_BYTES)
+    except web.WebError as e:
+        raise HTTPException(400, str(e)) from e
+    added, skipped = await store_documents(session, project_id, [(name, data)], source_url=final)
+    ready, held = await hold_suspicious(session, added) if check else (added, [])
+    job = _submit_ingest(session, project, [d.id for d in ready]) if ready else None
+    for d in added:
+        session.refresh(d)
+    return {"documents": added, "skipped": skipped, "held": held, "job": job}
+
+
 async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[Document], list[dict]]:
     """Splits newly stored documents into those to index and those held back because they look like
     they contain secrets or personal data (the same check as the inbox). A held document stays
@@ -99,8 +119,8 @@ async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[
     return ready, held
 
 
-async def store_documents(session: Session, project_id: int,
-                          items: list[tuple[str, bytes]]) -> tuple[list[Document], list[dict]]:
+async def store_documents(session: Session, project_id: int, items: list[tuple[str, bytes]],
+                          source_url: str | None = None) -> tuple[list[Document], list[dict]]:
     """Saves (filename, bytes) pairs as knowledge-base documents, skipping unsupported, empty,
     oversized and duplicate files. Shared by the upload page and the chat's drop zone."""
     target = docs_dir(project_id)
@@ -123,7 +143,8 @@ async def store_documents(session: Session, project_id: int,
         if digest in existing:
             skipped.append({"filename": name, "reason": "already in this knowledge base", "doc_id": existing[digest]})
             continue
-        doc = Document(project_id=project_id, filename=name, path="", size_bytes=len(data), sha256=digest)
+        doc = Document(project_id=project_id, filename=name, path="", size_bytes=len(data), sha256=digest,
+                       source_url=source_url)
         session.add(doc)
         session.commit()
         session.refresh(doc)
