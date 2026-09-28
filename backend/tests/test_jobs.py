@@ -14,7 +14,7 @@ def wait_final(client, job_id: int, timeout: float = 30) -> dict:
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json() == {"ok": True, "version": "dev"}
 
 
 def test_system_stats(client):

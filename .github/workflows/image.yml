@@ -78,7 +78,9 @@ jobs:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64
-          build-args: ${{ matrix.build-args }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            ${{ matrix.build-args }}
           push: ${{ steps.meta.outputs.tags != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
