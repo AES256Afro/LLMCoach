@@ -103,7 +103,8 @@ async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[
     ready, held = [], []
     for d in docs:
         try:
-            text = await asyncio.to_thread(lambda p=settings.data_dir / d.path: "\n\n".join(t for t, _ in parse(p)))
+            # No OCR here: someone is waiting on this upload, and a scan can take minutes to read.
+            text = await asyncio.to_thread(lambda p=settings.data_dir / d.path: "\n\n".join(t for t, _ in parse(p, ocr=False)))
         except ParseError:
             ready.append(d)  # the indexing job reports why it can't be read
             continue
