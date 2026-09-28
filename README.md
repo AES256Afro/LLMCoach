@@ -98,7 +98,7 @@ docker compose up -d --build
 
 1. Power: the card takes a 16-pin 12VHPWR / 12V-2x6 plug. Use a native cable from an ATX 3.x PSU, or the 3× 8-pin adapter that came with the card, with three *separate* PSU cables. Seat it fully. An 850W+ PSU is recommended.
 2. Install the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then check with `nvidia-smi`.
-3. BoxPilot (1.119.0 and later) passes the GPU to apps that ask for one, which Ollama does, so inference moves to the card straight away. LLMCoach's own image is CPU-only for now; to train on the GPU, run it standalone with `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` until a CUDA image ships.
+3. BoxPilot (1.119.0 and later) passes the GPU to apps that ask for one, which Ollama does, so inference moves to the card straight away. For LLMCoach to train on it, its catalog entry has to use the CUDA image (`ghcr.io/aes256afro/llmcoach:X.Y.Z-cuda`, published with every release from 0.8.0: PyTorch's CUDA 12.8 runtime plus bitsandbytes for QLoRA) with `gpu: optional`. Standalone, `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` builds the same image locally, with Unsloth added.
 4. Run **Smoke test + LoRA** from the Jobs page.
 
 ## Layout
