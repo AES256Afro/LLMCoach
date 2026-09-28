@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   api, type ChatMessage, type Dataset, type EvalRun, type FineTune, type Job, type JobEvent, type KBDocument,
   type LoopState, type ModelRef, type NotifyConfig, type Project, type ProviderStatus, type SearchHit, type Source,
@@ -9,6 +10,7 @@ import { parseUtc } from '../../components/ui'
 import { usePolling } from '../../hooks/usePolling'
 import { useJobStream } from '../../hooks/streams'
 import { startingConversation, useChatSession } from '../chat/useChatSession'
+import { nextSteps, type Target } from '../recommend'
 import { Blocks, LogTail, LossChart, Meter, Tile, gb, mmss, type Series } from './tiles'
 
 export interface Mission {
@@ -27,7 +29,7 @@ export interface Mission {
 }
 
 const grid = (columns: string, rows: string) => ({ gridTemplateColumns: columns, gridTemplateRows: rows })
-const KIND: Record<string, string> = { ingest: 'INDEX', generate: 'QA-GEN', train: 'TRAIN', evaluate: 'EVAL', smoke: 'SMOKE', demo: 'DEMO' }
+const KIND: Record<string, string> = { ingest: 'INDEX', generate: 'QA-GEN', train: 'TRAIN', evaluate: 'EVAL', export: 'EXPORT', smoke: 'SMOKE', demo: 'DEMO' }
 const STATUS: Record<string, [string, string]> = {
   done: ['OK', 'mc-ok'], failed: ['FAIL', 'mc-bad'], cancelled: ['STOP', 'mc-dim'], running: ['RUN', 'mc-am'], queued: ['WAIT', 'mc-dim'],
 }
@@ -38,6 +40,7 @@ function jobSummary(j: Job): string {
   if (j.kind === 'ingest') return `${(c.doc_ids as unknown[] | undefined)?.length ?? 0} docs`
   if (j.kind === 'generate') return `${String(c.model ?? '')} · ${c.max_chunks ?? '?'} passages`
   if (j.kind === 'evaluate') return `eval #${c.eval_id ?? '?'} · ${c.max_examples ?? '?'} questions`
+  if (j.kind === 'export') return `${String(c.name ?? '')} · ${String(c.quantize ?? 'f16')}`
   return ''
 }
 
@@ -263,12 +266,43 @@ function LastRunTile({ m, style }: { m: Mission; style?: React.CSSProperties }) 
   )
 }
 
+// Where each suggested step is done in this studio.
+const NEXT_VIEW: Record<Target, [string, string]> = {
+  knowledge: ['know', 'F2'], inbox: ['know', 'F2'], practice: ['data', 'F3'], loop: ['data', 'F3'], train: ['train', 'F4'], results: ['eval', 'F5'],
+}
+
+function NextTile({ m, style }: { m: Mission; style?: React.CSSProperties }) {
+  const pid = m.project.id
+  const navigate = useNavigate()
+  const { data: graph } = usePolling(() => api.pipeline(pid), 15000, [pid])
+  const { data: held } = usePolling(() => api.reviewQueue(pid).catch(() => []), 15000, [pid])
+  const steps = graph ? nextSteps(graph, held?.length ?? 0) : []
+  return (
+    <Tile title="Next" right={graph ? (steps.length ? `${steps.length} TO DO` : 'ALL CLEAR') : undefined} style={style}>
+      {graph && !steps.length && <div className="mc-dim">nothing waiting on you.</div>}
+      <div className="mc-list grid-cols-[auto_1fr_auto]">
+        {steps.map((x) => {
+          const [view, key] = NEXT_VIEW[x.target]
+          return (
+            <Fragment key={x.id}>
+              <span className={x.tone === 'pri' ? 'mc-am' : 'mc-dim'}>›</span>
+              <button type="button" className="text-left hover:underline" title={x.detail} onClick={() => navigate(`/console/${view}`)}>{x.title}</button>
+              <span className="mc-dim">{key}</span>
+            </Fragment>
+          )
+        })}
+      </div>
+    </Tile>
+  )
+}
+
 export function ChatView({ m }: { m: Mission }) {
   return (
-    <div className="mc-grid" style={grid('1.7fr 1fr 1fr', '1fr 1fr 1fr')}>
-      <ChatTile m={m} style={{ gridRow: 'span 3' }} />
+    <div className="mc-grid" style={grid('1.7fr 1fr 1fr', 'auto auto 1fr 1fr')}>
+      <ChatTile m={m} style={{ gridRow: 'span 4' }} />
       <SystemTile m={m} />
-      <ModelsTile m={m} />
+      <ModelsTile m={m} style={{ gridRow: 'span 2' }} />
+      <NextTile m={m} />
       <LastRunTile m={m} style={{ gridColumn: 'span 2' }} />
       <QueueTile m={m} style={{ gridColumn: 'span 2' }} />
     </div>
