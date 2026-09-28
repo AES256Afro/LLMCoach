@@ -23,6 +23,8 @@ export function Train() {
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [finetunes, setFinetunes] = useState<FineTune[]>([])
   const [jobId, setJobId] = useState<number | null>(null)
+  const [jobTitle, setJobTitle] = useState('Training')
+  const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
     if (pid == null) return
@@ -47,6 +49,17 @@ export function Train() {
   if (!project || !opts) return <div className="text-sm text-muted">Loading…</div>
   const hw = opts.hardware
 
+  const sendToOllama = async (f: FineTune) => {
+    setError('')
+    try {
+      const r = await api.exportFinetune(project.id, f.id)
+      setJobTitle(`Export to Ollama · ${r.model.replace(/^[^/]+\//, '')}`)
+      setJobId(r.job.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message.replace(/^\d+: /, '') : String(e))
+    }
+  }
+
   return (
     <>
       <PageHeader title="Train" subtitle={`LoRA fine-tuning on your datasets · ${project.name}`} />
@@ -68,15 +81,16 @@ export function Train() {
           <p className="text-sm text-muted">You need a dataset first. <Link to="/datasets" className="text-accent hover:underline">Import or generate one</Link>.</p>
         </Card>
       ) : (
-        <NewFineTune pid={project.id} opts={opts} datasets={datasets} onStarted={(j) => { setJobId(j); reload() }} />
+        <NewFineTune pid={project.id} opts={opts} datasets={datasets} onStarted={(j) => { setJobTitle('Training'); setJobId(j); reload() }} />
       )}
 
-      {jobId != null && <JobProgress jobId={jobId} title="Training" onFinished={reload} onDismiss={() => setJobId(null)} />}
+      {jobId != null && <JobProgress key={jobId} jobId={jobId} title={jobTitle} onFinished={reload} onDismiss={() => setJobId(null)} />}
+      {error && <p className="mb-4 text-sm text-bad">{error}</p>}
 
       <Card title="Fine-tunes">
         {!finetunes.length ? <Empty>No fine-tunes yet.</Empty> : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-sm">
+            <table className="w-full min-w-[52rem] text-sm [&_td+td]:pl-4 [&_th+th]:pl-4">
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="pb-2 font-normal">Name</th>
@@ -95,6 +109,7 @@ export function Train() {
                     <td className="py-2">
                       <div>{f.name}</div>
                       <div className="font-mono text-[11px] text-muted">{f.base_model} · {f.method.toUpperCase()}</div>
+                      {f.ollama_model && <div className="font-mono text-[11px] text-ok" title="Exported: chat with it like any Ollama model">{f.ollama_model}</div>}
                       {f.error && <div className="line-clamp-2 text-xs text-bad">{f.error}</div>}
                     </td>
                     <td className="py-2"><span className={`rounded-full px-2 py-0.5 text-xs ${FT_STYLE[f.status]}`}>{f.status}</span></td>
@@ -102,9 +117,13 @@ export function Train() {
                     <td className="py-2 text-right font-mono">{f.metrics?.eval_loss?.toFixed(4) ?? '—'}</td>
                     <td className="py-2 text-right font-mono text-muted">{f.metrics?.steps ?? f.config?.total_steps ?? '—'}</td>
                     <td className="py-2 text-muted">{f.backend === 'unsloth' ? 'Unsloth' : 'TRL'}</td>
-                    <td className="py-2 text-muted">{fmtTime(f.created_at)}</td>
+                    <td className="whitespace-nowrap py-2 text-muted">{fmtTime(f.created_at)}</td>
                     <td className="whitespace-nowrap py-2 text-right text-xs">
                       {f.job_id && <Link to={`/jobs/${f.job_id}`} className="mr-3 text-accent hover:underline">Charts & logs</Link>}
+                      {f.status === 'ready' && (f.ollama_model
+                        ? <Link to={`/chat?model=${encodeURIComponent(f.ollama_model)}`} className="mr-3 text-accent hover:underline">Chat with it</Link>
+                        : <button className="mr-3 text-accent hover:underline" title="Merge the adapter into its base model and add it to Ollama"
+                                  onClick={() => sendToOllama(f)}>Export to Ollama</button>)}
                       <button disabled={f.status === 'queued' || f.status === 'training'} className="text-bad/80 hover:text-bad disabled:opacity-30"
                               onClick={async () => {
                                 if (!confirm(`Delete "${f.name}" and its adapter?`)) return

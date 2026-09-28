@@ -35,10 +35,13 @@ const STATUS_STYLE: Record<FileStatus, string> = {
   quarantined: 'bg-warn/15 text-warn',
   rejected: 'bg-muted/15 text-muted',
   failed: 'bg-bad/15 text-bad',
+  gone: 'bg-muted/15 text-muted',
+  forgotten: 'bg-muted/15 text-muted',
 }
 const STATUS_WORD: Record<FileStatus, string> = {
   waiting: 'waiting', added: 'added', duplicate: 'already known', skipped: 'skipped',
   quarantined: 'held for review', rejected: 'kept out', failed: 'failed',
+  gone: 'deleted, still known', forgotten: 'deleted and forgotten',
 }
 
 function FileBadge({ status }: { status: FileStatus }) {
@@ -206,6 +209,18 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
           </select>
         </Field>
       </div>
+      <label className="mt-3 flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={s.mirror_deletes}
+               onChange={(e) => update({ mirror_deletes: e.target.checked })} />
+        <span>
+          Forget files deleted from this folder
+          <span className="block text-[11px] text-muted">
+            {s.mirror_deletes
+              ? 'A file gone for a minute takes its document out of the knowledge base. Nothing is removed while the whole folder looks empty, as an unplugged share would.'
+              : 'Off: documents stay after their file is deleted, so the folder can be cleared once files are in.'}
+          </span>
+        </span>
+      </label>
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
         {(Object.keys(STATUS_WORD) as FileStatus[]).filter((k) => s.counts[k]).map((k) => (
@@ -256,6 +271,7 @@ function Ledger({ pid, sourceId }: { pid: number; sourceId: number }) {
                 <td className="px-2 py-1.5">
                   <span className="font-mono">{f.relpath}</span>
                   {f.error && <span className="block text-muted">{f.error}</span>}
+                  {f.missing_at && <span className="block text-warn">Not in the folder since {fmtTime(f.missing_at)}; its document goes if it stays away.</span>}
                 </td>
                 <td className="px-2 py-1.5"><FileBadge status={f.status} /></td>
                 <td className="whitespace-nowrap px-2 py-1.5 text-muted">{fmtTime(f.processed_at ?? f.first_seen_at)}</td>

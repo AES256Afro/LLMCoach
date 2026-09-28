@@ -34,6 +34,11 @@ in Classic and an Inbox section in the Chat studio's context rail):
   written more than 30 seconds ago, so half-copied files from a network share aren't read.
 - **Ledger**: every file's fate (added, already known, skipped, held, kept out, failed). A file that
   changes replaces the document it added; a touched-but-unchanged file does nothing.
+- **Deleted files**: a deleted file's document stays by default (the folder can be used as a drop box
+  and cleared). With *Forget files deleted from this folder* (`mirror_deletes`), a file away for a
+  minute takes its document out of the knowledge base, unless another watched copy holds the same
+  content, and never while the whole folder looks empty (an unmounted share). A file put back is read
+  again, and a kept document is recognised rather than added twice.
 - **Checks before adding**: secrets (private keys, cloud and service tokens, JWTs, `password = …`) and
   personal data (SSNs, card numbers that pass Luhn, lists of five or more emails or phone numbers).
   Findings are stored masked. Held files wait in a review queue: *Add anyway* or *Keep out*.
@@ -48,8 +53,6 @@ in Classic and an Inbox section in the Chat studio's context rail):
 Still to do for L2:
 
 - **Buckets** (MinIO / S3 prefixes) as a source kind, polled like folders.
-- Deleted files in a watched folder leave their documents in place; offer "remove documents whose
-  files are gone".
 
 Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):
 the adapter is merged into its base model, the safetensors and the base model's original tokenizer
