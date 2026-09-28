@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Send, X } from 'lucide-react'
-import { api, uploadDocuments, type KBDocument, type PipelineGraph, type SearchHit, type SourceMode } from '../../api'
+import { api, defaultModel, uploadDocuments, type KBDocument, type PipelineGraph, type SearchHit, type SourceMode } from '../../api'
 import { metricRows } from '../../components/LossChart'
 import { stripAnsi } from '../../components/ansi'
 import { fmtTime } from '../../components/ui'
@@ -229,7 +229,7 @@ function ChatPanel() {
 async function defaultChatModel(g: PipelineGraph): Promise<string | null> {
   if (g.chat.model) return g.chat.model
   const models = await api.models('chat').catch(() => [])
-  return [...models].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? null
+  return defaultModel(models)
 }
 
 function DatasetPanel({ g, id, pid, say, changed }: { g: PipelineGraph; id: number; pid: number; say: Say; changed: () => void }) {

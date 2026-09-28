@@ -5,7 +5,7 @@ import './notebook.css'
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { MessageCircle } from 'lucide-react'
-import { api, type ChatMessage, type ModelRef, type PipelineGraph, type SearchHit } from '../../api'
+import { api, defaultModel, type ChatMessage, type ModelRef, type PipelineGraph, type SearchHit } from '../../api'
 import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
 import { StudioSwitcher } from '../StudioSwitcher'
@@ -155,7 +155,7 @@ function AskView({ g, onConversation }: { g: PipelineGraph; onConversation: (id:
   const question = pending?.question ?? last?.q
   const answer = pending ? { content: pending.answer, sources: pending.sources, model: pending.model, stats: null } : last?.a
   const hits: SearchHit[] = answer?.sources ?? []
-  const model = settings.model ?? active?.model ?? [...models].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? null
+  const model = settings.model ?? active?.model ?? defaultModel(models)
   // Braces matter: newer browsers return a Promise from scrollIntoView, and an effect must return a cleanup or nothing.
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [turns.length, pending?.answer])
 

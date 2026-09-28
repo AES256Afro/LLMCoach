@@ -21,6 +21,7 @@ export interface ProjectSettings {
   top_k: number
   search_mode: 'hybrid' | 'vector'
   system_prompt: string | null
+  qa_model?: string | null // writes practice Q&A; null = the chat's model unless it's an LLMCoach fine-tune
 }
 
 export interface Project {
@@ -116,6 +117,15 @@ export interface ProviderStatus extends ReachStatus {
 export interface ModelRef extends ModelInfo {
   ref: string
   provider: string
+}
+
+/** A fine-tune LLMCoach exported to Ollama (llmcoach-<project>-...). */
+export const ownModel = (ref: string | null | undefined) => !!ref && (ref.split('/').slice(1).join('/') || ref).startsWith('llmcoach-')
+
+/** The default chat model, as the server picks it: the smallest, with LLMCoach's own fine-tunes last. */
+export function defaultModel(ms: ModelRef[]): string | null {
+  const key = (m: ModelRef): [number, number] => [ownModel(m.ref) ? 1 : 0, m.size_gb ?? 1e9]
+  return [...ms].sort((a, b) => key(a)[0] - key(b)[0] || key(a)[1] - key(b)[1])[0]?.ref ?? null
 }
 
 export interface AuthState {

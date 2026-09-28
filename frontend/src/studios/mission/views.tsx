@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  api, type ChatMessage, type Dataset, type EvalRun, type FineTune, type Job, type JobEvent, type KBDocument,
+  api, defaultModel, type ChatMessage, type Dataset, type EvalRun, type FineTune, type Job, type JobEvent, type KBDocument,
   type LoopState, type ModelRef, type NotifyConfig, type Project, type ProviderStatus, type SearchHit, type Source,
   type SystemStats,
 } from '../../api'
@@ -178,7 +178,7 @@ function ChatTile({ m, style }: { m: Mission; style?: React.CSSProperties }) {
       session.open(startingConversation(session.conversations)!)
     }
   }, [opened, active, session])
-  const model = settings.model ?? active?.model ?? [...models].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? null
+  const model = settings.model ?? active?.model ?? defaultModel(models)
   const cycleModel = () => {
     if (!models.length) return
     const i = models.findIndex((x) => x.ref === model)
