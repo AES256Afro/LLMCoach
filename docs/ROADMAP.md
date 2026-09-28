@@ -106,7 +106,8 @@ now starts again instead of failing.
 - Once the RTX 4080 is in: point `catalog/llmcoach.yaml` at the `-cuda` image (published from 0.8.0 as
   `ghcr.io/aes256afro/llmcoach:X.Y.Z-cuda`) and add `gpu: optional`. The CUDA image also runs on a CPU,
   but it's several GB larger, so there's no point switching before the card is there.
-- Whisper and ntfy in the catalog, for voice notes and alerts.
+- Whisper and ntfy are in the catalog; LLMCoach's entry has an optional *Where Whisper is*
+  (`LLMCOACH_WHISPER_URL`) since BoxPilot 1.125.0, and ntfy is set on Mission Control's F8 view.
 
 ## Shipping
 
@@ -114,5 +115,7 @@ Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmc
 `catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio), 0.4.0 (inbox and learning loop),
 0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas), 0.7.0 (Workbench, Field Notebook, Friendly Studio, export to
 Ollama; in BoxPilot 1.121.0 with the inbox volume), 0.8.0 (buckets, held uploads, Review first, split panes; BoxPilot
-1.123.0), 0.9.0 (web pages and feeds, OCR) and 0.10.0 (moving projects). Each tag also publishes `X.Y.Z-cuda` (from
-0.8.0), and `/api/health` reports which version is running.
+1.123.0), 0.9.0 (web pages and feeds, OCR), 0.10.0 (moving projects), 0.10.1 (exported fine-tunes no longer write their
+own training data; BoxPilot 1.124.0) and 0.11.0 (voice notes, model cards, the Send to LLMCoach bookmarklet; BoxPilot
+1.125.0, which adds `LLMCOACH_WHISPER_URL`). Each tag also publishes `X.Y.Z-cuda` (from 0.8.0), and `/api/health`
+reports which version is running.
