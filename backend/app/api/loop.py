@@ -18,7 +18,7 @@ from ..services import notify, training
 from ..services.jobs import AFTER_HOOKS
 from .evals import EvalCreate, Variant, create_eval
 from .projects import get_project_or_404
-from .training import FineTuneCreate, create_finetune
+from .training import FineTuneCreate, create_finetune, current_model_name, submit_export
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["learning loop"])
 
@@ -61,13 +61,22 @@ def promoted(s: Session, project_id: int) -> FineTune | None:
                   .order_by(FineTune.promoted_at.desc())).first()
 
 
-def promote(s: Session, ft: FineTune) -> None:
+def promote(s: Session, ft: FineTune) -> str | None:
+    """Marks ft as the adapter in use. Returns the Ollama model being rebuilt from it, if the loop
+    keeps one up to date."""
     for other in s.exec(select(FineTune).where(FineTune.project_id == ft.project_id, FineTune.promoted_at != None)):  # noqa: E711
         other.promoted_at = None
         s.add(other)
     ft.promoted_at = utcnow()
     s.add(ft)
     s.commit()
+    loop = get_loop(s, ft.project_id)
+    project = s.get(Project, ft.project_id)
+    if not loop.export_on_promote or project is None or not ft.output_dir:
+        return None
+    name = current_model_name(project.name)
+    submit_export(s, ft.project_id, ft, name)
+    return f"ollama/{name}"
 
 
 _ALERT = {"promoted": ("New adapter promoted", 3, "tada"), "kept": ("Kept the current adapter", 2, "scales"),
@@ -162,6 +171,10 @@ def _after_train(job: Job) -> None:
         s.commit()
 
 
+def _rebuilding(model: str | None) -> str:
+    return f" Rebuilding {model} from it." if model else ""
+
+
 def _after_eval(job: Job) -> None:
     eval_id = int(job.config.get("eval_id", 0))
     with Session(engine) as s:
@@ -182,13 +195,14 @@ def _after_eval(job: Job) -> None:
             _end(s, run, "failed", "The evaluation produced no score for the new adapter.")
             return
         if base is None:
-            promote(s, ft)
+            model = promote(s, ft)
             why = ("It's the project's first adapter" if run.baseline_finetune_id is None
                    else "The current adapter couldn't be scored")
-            _end(s, run, "promoted", f"{why}, so the new one was promoted (F1 {cand:.2f}).")
+            _end(s, run, "promoted", f"{why}, so the new one was promoted (F1 {cand:.2f}).{_rebuilding(model)}")
         elif cand > base + loop.margin:
-            promote(s, ft)
-            _end(s, run, "promoted", f"Scored F1 {cand:.2f} against {base:.2f} for the current adapter: promoted.")
+            model = promote(s, ft)
+            _end(s, run, "promoted", f"Scored F1 {cand:.2f} against {base:.2f} for the current adapter: promoted."
+                                     f"{_rebuilding(model)}")
         else:
             need = f", and needed to beat it by {loop.margin:.2f}" if loop.margin else ""
             _end(s, run, "kept", f"Scored F1 {cand:.2f} against {base:.2f} for the current adapter{need}: "
@@ -257,6 +271,7 @@ async def scheduler_tick(now: datetime | None = None) -> None:
 
 def _state(s: Session, project_id: int) -> dict:
     loop = get_loop(s, project_id)
+    project = s.get(Project, project_id)
     fts = list(s.exec(select(FineTune).where(FineTune.project_id == project_id).order_by(FineTune.id.desc())))
     names = {f.id: f.name for f in fts}
     runs = list(s.exec(select(LoopRun).where(LoopRun.project_id == project_id).order_by(LoopRun.id.desc()).limit(20)))
@@ -265,6 +280,7 @@ def _state(s: Session, project_id: int) -> dict:
         "loop": loop,
         "dataset": {"id": d.id, "name": d.name, "rows": d.row_count, "splits": d.splits, "status": d.status} if d else None,
         "recommended_base_model": training.recommended_base_model(training.hardware()),
+        "current_model": f"ollama/{current_model_name(project.name)}" if project else None,
         "runs": [{**r.model_dump(mode="json"), "finetune_name": names.get(r.finetune_id),
                   "baseline_name": names.get(r.baseline_finetune_id)} for r in runs],
         "registry": [{"id": f.id, "name": f.name, "base_model": f.base_model, "status": f.status,
@@ -289,6 +305,7 @@ class LoopUpdate(BaseModel):
     min_new_rows: int | None = None
     margin: float | None = None
     max_examples: int | None = None
+    export_on_promote: bool | None = None
 
 
 @router.put("/loop")

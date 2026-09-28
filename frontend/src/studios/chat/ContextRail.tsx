@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AlertTriangle, Check, FolderInput, Loader2, Play, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AlertTriangle, Check, ChevronRight, FolderInput, Loader2, Play, X } from 'lucide-react'
 import { api, isFinal, type Dataset, type Job, type KBDocument, type Source } from '../../api'
+import { nextSteps, type NextStep, type Tone } from '../recommend'
 import type { SelectedSource } from './Thread'
 
-const KIND_LABEL: Record<string, string> = { ingest: 'Index files', generate: 'Write Q&A', train: 'Fine-tune', evaluate: 'Compare', smoke: 'Hardware check', demo: 'Demo' }
+const KIND_LABEL: Record<string, string> = { ingest: 'Index files', generate: 'Write Q&A', train: 'Fine-tune', evaluate: 'Compare', export: 'Export to Ollama', smoke: 'Hardware check', demo: 'Demo' }
+const TONE_DOT: Record<Tone, string> = { sun: 'bg-warm', mint: 'bg-ok', sky: 'bg-accent', pri: 'bg-accent' }
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -27,7 +29,7 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
   selected: SelectedSource | null
   question: string
   onPick: () => void
-  onCommand: (name: string) => void
+  onCommand: (name: string, args?: string) => void
   onClose?: () => void
   refreshKey: number
 }) {
@@ -36,15 +38,17 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [sources, setSources] = useState<Source[]>([])
   const [held, setHeld] = useState(0)
+  const [steps, setSteps] = useState<NextStep[]>([])
+  const navigate = useNavigate()
 
   useEffect(() => {
     let alive = true
     let timer: number | undefined
     const load = async () => {
       try {
-        const [d, j, ds, src, review] = await Promise.all([
+        const [d, j, ds, src, review, graph] = await Promise.all([
           api.documents(pid), api.jobs({ limit: 6, project_id: pid }), api.datasets(pid),
-          api.sources(pid).catch(() => []), api.reviewQueue(pid).catch(() => []),
+          api.sources(pid).catch(() => []), api.reviewQueue(pid).catch(() => []), api.pipeline(pid).catch(() => null),
         ])
         if (!alive) return
         setDocs(d)
@@ -52,6 +56,8 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
         setDataset(ds.find((x) => x.source === 'chat') ?? null)
         setSources(src)
         setHeld(review.length)
+        // Files held for review already have their own notice under Inbox.
+        setSteps(graph ? nextSteps(graph, review.length).filter((x) => x.id !== 'review') : [])
         const moving = j.some((x) => !isFinal(x.status)) || d.some((x) => x.status === 'pending' || x.status === 'ingesting')
         timer = window.setTimeout(load, moving ? 2500 : 10000)
       } catch {
@@ -66,6 +72,14 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
   }, [pid, refreshKey])
 
   const s = selected?.stats
+  // Each step's area, as this studio does it: most are a slash command away.
+  const go = (step: NextStep) => {
+    if (step.target === 'knowledge') onPick()
+    else if (step.target === 'practice') onCommand('learn', 'all')
+    else if (step.target === 'train') onCommand('train')
+    else if (step.target === 'results') onCommand('compare')
+    else navigate(step.target === 'loop' ? '/inbox?tab=loop' : '/inbox')
+  }
   const total = dataset?.splits ? dataset.splits.train + dataset.splits.val + dataset.splits.test : 0
 
   return (
@@ -95,6 +109,26 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
             {s.first_token_ms != null && <><dt className="text-muted">First token</dt><dd className="text-right">{(s.first_token_ms / 1000).toFixed(1)} s</dd></>}
             {s.total_ms != null && <><dt className="text-muted">Total</dt><dd className="text-right">{(s.total_ms / 1000).toFixed(1)} s</dd></>}
           </dl>
+        </Section>
+      )}
+
+      {steps.length > 0 && (
+        <Section title="Next">
+          <ul className="space-y-1">
+            {steps.map((x) => (
+              <li key={x.id}>
+                <button type="button" onClick={() => go(x)}
+                        className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-panel-2">
+                  <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[x.tone]}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px]">{x.title}</span>
+                    <span className="block text-[11px] leading-snug text-muted">{x.detail}</span>
+                  </span>
+                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted opacity-0 group-hover:opacity-100" />
+                </button>
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
 

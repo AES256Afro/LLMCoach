@@ -10,6 +10,8 @@ export interface StatsSample {
   ram: number
   gpuUtil: number | null
   vram: number | null
+  temp?: number | null // GPU °C
+  power?: number | null // GPU watts
 }
 
 /**
@@ -36,6 +38,8 @@ export function useSystemStream() {
       }
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data)
+        // The server's last few minutes, so trends draw at once instead of filling in.
+        if (msg.type === 'history') { setHistory((msg.samples as StatsSample[]).slice(-MAX_HISTORY)); return }
         if (msg.type !== 'stats') return
         const s: SystemStats = msg.stats
         setStats(s)
@@ -49,6 +53,8 @@ export function useSystemStream() {
               ram: (s.ram_used_gb / s.ram_total_gb) * 100,
               gpuUtil: g?.util_pct ?? null,
               vram: g?.vram_used_gb != null && g.vram_total_gb ? (g.vram_used_gb / g.vram_total_gb) * 100 : null,
+              temp: g?.temp_c ?? null,
+              power: g?.power_w ?? null,
             },
           ].slice(-MAX_HISTORY),
         )

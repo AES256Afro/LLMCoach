@@ -25,7 +25,7 @@ The typical loop: put your documents in the **Knowledge Base**, chat with them i
 | **Datasets** | Import JSONL, JSON or CSV (chat, Alpaca, prompt/completion, question/answer, ShareGPT), with row-level validation and a seeded train/val/test split. You can also **generate Q&A pairs from the knowledge base** with any chat model. |
 | **Train** | LoRA / QLoRA fine-tuning with Quick/Balanced/Thorough presets and a **memory estimate against your hardware** before launch, plus live loss, eval-loss and learning-rate charts. It uses **Unsloth** on an NVIDIA GPU and **TRL + PEFT** elsewhere (CPU included, for models under 1B). |
 | **Compare** | Run a test split through up to six variants: models, fine-tunes, each with or without the knowledge base. Scores are exact match, F1 and ROUGE-L, plus an optional **LLM judge** (1–5 with reasons), shown side by side with overlap highlighting. |
-| **Inbox** | Watched folders: files copied into a folder (or a share on the network) join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
+| **Inbox** | Watched folders and buckets: files copied into a folder (or a share on the network), or objects put in an S3 or MinIO bucket, join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
 | **Export** | Send a fine-tune to Ollama with one button (Workbench, Canvas, or *Use in chat* in the Friendly Studio): it's merged, quantized and built on the Ollama server, then works in every chat like any other model. A 0.5B fine-tune answers several times faster than an 8B model. |
 | **Providers** | Ollama (default) plus any OpenAI-compatible server, with presets for **llama.cpp, vLLM, SGLang, LocalAI and Text Embeddings Inference**. Models are named `provider/model`, so tasks can mix them. |
 | **Jobs / Logs** | Everything heavy runs as a queued job in its own process, with live logs, progress, charts and cancel. |
@@ -43,7 +43,7 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | 4 | Eval + Compare | ✅ |
 | 5 | Export fine-tunes to GGUF / Ollama; vLLM live adapter loading; Axolotl (DPO/ORPO) | ⏳ |
 | L0–L1 | Studios framework and the Chat studio | ✅ 0.3.0 |
-| L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0 (buckets and export to Ollama still to come) |
+| L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0, buckets in 0.8.0 |
 | L3 | Pipeline Canvas: the project as an editable flow, Run pipeline | ✅ 0.6.0 |
 | L4 | Mission Control studio and ntfy alerts | ✅ 0.5.0 |
 | L5 | Workbench: explorer, tabs, docked logs, settings as code, Ctrl K to everything | ✅ 0.7.0 |
@@ -98,7 +98,7 @@ docker compose up -d --build
 
 1. Power: the card takes a 16-pin 12VHPWR / 12V-2x6 plug. Use a native cable from an ATX 3.x PSU, or the 3× 8-pin adapter that came with the card, with three *separate* PSU cables. Seat it fully. An 850W+ PSU is recommended.
 2. Install the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then check with `nvidia-smi`.
-3. BoxPilot (1.119.0 and later) passes the GPU to apps that ask for one, which Ollama does, so inference moves to the card straight away. LLMCoach's own image is CPU-only for now; to train on the GPU, run it standalone with `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` until a CUDA image ships.
+3. BoxPilot (1.119.0 and later) passes the GPU to apps that ask for one, which Ollama does, so inference moves to the card straight away. For LLMCoach to train on it, its catalog entry has to use the CUDA image (`ghcr.io/aes256afro/llmcoach:X.Y.Z-cuda`, published with every release from 0.8.0: PyTorch's CUDA 12.8 runtime plus bitsandbytes for QLoRA) with `gpu: optional`. Standalone, `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build` builds the same image locally, with Unsloth added.
 4. Run **Smoke test + LoRA** from the Jobs page.
 
 ## Layout
@@ -108,10 +108,11 @@ backend/app/
   main.py              FastAPI app; also serves the built UI
   auth.py              single-owner sign-in (signed cookie; off when no password is set)
   api/                 REST + WebSocket routes (jobs, projects, knowledge, chat, datasets, training, evals, ...)
-  api/inbox.py         watched folders: the poller, ledger and review queue
+  api/inbox.py         watched folders and buckets: the poller, ledger and review queue
   api/loop.py          the learning loop: train -> evaluate -> promote, chained by an after-job hook
   api/tokens.py        API tokens for scripts (hash stored; "inbox" scope can only upload)
   services/scan.py     secret and personal-data checks for incoming files
+  services/s3.py       list and read S3 / MinIO buckets (SigV4, no SDK)
   services/jobs.py     single-GPU queue; each job = python -m app.workers.<kind>
   services/device.py   CPU / nvidia-smi / rocm-smi detection and stats
   workers/             job processes; write log.txt + metrics.jsonl in data/runs/<id>/

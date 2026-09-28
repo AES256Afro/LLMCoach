@@ -35,7 +35,7 @@ export function parseCommand(text: string): { name: string; args: string } | nul
 }
 
 export const HELP_TEXT = [
-  'Drop files anywhere, onto **Remember** (the bot looks things up and cites them) or **Learn** (it also writes practice Q&A for fine-tuning).',
+  'Drop files anywhere, onto **Remember** (the bot looks things up and cites them), **Learn** (it also writes practice Q&A for fine-tuning) or **Review first** (you tick which Q&A to keep).',
   'Attach a file and type a question to ask about it as soon as it is indexed.',
   '',
   ...COMMANDS.map((c) => `\`/${c.name}${c.args ? ` ${c.args}` : ''}\`: ${c.description}`),

@@ -126,7 +126,7 @@ export interface AuthState {
 /** Fired when any request comes back 401 so the app can show the sign-in screen. */
 export const AUTH_REQUIRED_EVENT = 'llmcoach:auth-required'
 
-export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed'
+export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed' | 'held' // held: not indexed, may be private
 
 export interface KBDocument {
   id: number
@@ -172,7 +172,14 @@ export interface Chunk {
 export interface UploadResult {
   documents: KBDocument[]
   skipped: { filename: string; reason: string }[]
+  held: HeldFile[] // stored but not indexed: they look like they hold secrets or personal data
   job: Job | null
+}
+
+export interface HeldFile {
+  doc_id: number
+  filename: string
+  findings: Finding[]
 }
 
 export interface ChatStats {
@@ -254,7 +261,7 @@ export interface Dataset {
   id: number
   project_id: number
   name: string
-  source: 'upload' | 'generated' | 'chat' | 'inbox'
+  source: 'upload' | 'generated' | 'chat' | 'inbox' | 'review' // review: practice Q&A waiting to be looked over
   status: 'generating' | 'ready' | 'failed'
   row_count: number
   splits: Record<Split, number> | null
@@ -437,19 +444,30 @@ export function errorDetail(detail: unknown): string | undefined {
 // ---- inbox, tokens and the learning loop --------------------------------------------------------
 
 export type SourceMode = 'remember' | 'learn'
+/** What a file dropped into a chat is for; review writes practice Q&A to look over before it's kept. */
+export type AttachMode = 'remember' | 'learn' | 'review'
 export type SourceScan = 'all' | 'secrets' | 'off'
 export type FileStatus = 'waiting' | 'added' | 'duplicate' | 'skipped' | 'quarantined' | 'rejected' | 'failed'
+  | 'gone' | 'forgotten' // deleted from the folder: document kept | document removed too
 
 export interface Source {
   id: number
   project_id: number
   name: string
-  folder: string
+  kind: 'folder' | 'bucket'
+  folder: string // folder sources: relative to the inbox ("." is its root)
+  endpoint: string | null // bucket sources (S3, MinIO...)
+  bucket: string | null
+  prefix: string | null
+  region: string | null
+  access_key: string | null
+  has_secret: boolean
   path: string
   mode: SourceMode
   scan: SourceScan
   enabled: boolean
   poll_seconds: number
+  mirror_deletes: boolean // a file deleted from the folder takes its document with it
   last_scan_at: string | null
   last_error: string | null
   created_at: string
@@ -477,6 +495,7 @@ export interface SourceFile {
   first_seen_at: string
   processed_at: string | null
   reviewed_at: string | null
+  missing_at: string | null
   source_name?: string | null
 }
 
@@ -521,6 +540,7 @@ export interface LearningLoop {
   min_new_rows: number
   margin: number
   max_examples: number
+  export_on_promote: boolean // keep ollama/llmcoach-<project>-current built from the promoted adapter
   last_rows: number
   last_run_at: string | null
   next_run_at: string | null
@@ -587,6 +607,7 @@ export interface LoopState {
   loop: LearningLoop
   dataset: { id: number; name: string; rows: number; splits: Record<Split, number> | null; status: string } | null
   recommended_base_model: string
+  current_model: string | null // the Ollama model export_on_promote keeps up to date
   runs: LoopRun[]
   registry: RegistryEntry[]
 }
@@ -662,6 +683,9 @@ export const api = {
     for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== '') p.set(k, String(v))
     return request<{ rows: DatasetRow[]; total: number }>(`/api/projects/${pid}/datasets/${id}/rows?${p}`)
   },
+  acceptReview: (pid: number, id: number, rows: number[]) =>
+    request<{ dataset: Dataset | null; accepted: number; discarded: number }>(`/api/projects/${pid}/datasets/${id}/accept`,
+      { method: 'POST', body: JSON.stringify({ rows }) }),
   resplit: (pid: number, id: number, val: number, test: number, seed = 42) =>
     request<Dataset>(`/api/projects/${pid}/datasets/${id}/split`, { method: 'POST', body: JSON.stringify({ val, test, seed }) }),
   deleteDataset: (pid: number, id: number) => request<void>(`/api/projects/${pid}/datasets/${id}`, { method: 'DELETE' }),
@@ -698,11 +722,13 @@ export const api = {
   updateProject: (id: number, patch: { name?: string; description?: string; settings?: Partial<ProjectSettings> }) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+  health: () => request<{ ok: boolean; version: string }>('/api/health'),
   inbox: () => request<InboxInfo>('/api/inbox'),
   sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
-  createSource: (pid: number, body: { name?: string; folder: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
+  createSource: (pid: number, body: { name?: string; kind?: 'folder' | 'bucket'; folder?: string; endpoint?: string; bucket?: string; prefix?: string
+    region?: string; access_key?: string; secret_key?: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
     request<Source>(`/api/projects/${pid}/sources`, { method: 'POST', body: JSON.stringify(body) }),
-  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds'>>) =>
+  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes' | 'endpoint' | 'region' | 'access_key'>> & { secret_key?: string }) =>
     request<Source>(`/api/projects/${pid}/sources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSource: (pid: number, id: number) => request<void>(`/api/projects/${pid}/sources/${id}`, { method: 'DELETE' }),
   scanSource: (pid: number, id: number) => request<PollResult>(`/api/projects/${pid}/sources/${id}/scan`, { method: 'POST' }),
@@ -804,7 +830,7 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
 
 /** Files dropped (or text pasted) into a chat: remembered, or also learned from. */
 export function attachToChat(pid: number, opts: {
-  files: File[]; mode: 'remember' | 'learn'; text?: string; title?: string; conversationId?: number; model?: string
+  files: File[]; mode: AttachMode; text?: string; title?: string; conversationId?: number; model?: string
 }, onProgress: (fraction: number) => void = () => {}): Promise<AttachResult> {
   return new Promise((resolve, reject) => {
     const form = new FormData()

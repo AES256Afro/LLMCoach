@@ -7,7 +7,7 @@ import './workbench.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ChevronDown, ChevronRight, Cpu, FileText, FlaskConical, FolderInput, FolderTree, LayoutGrid, MessagesSquare, PanelBottom,
+  ChevronDown, ChevronRight, Columns2, Cpu, FileText, FlaskConical, FolderInput, FolderTree, LayoutGrid, MessagesSquare, PanelBottom,
   Play, Plus, Search, Settings, Table2, TerminalSquare, Zap,
 } from 'lucide-react'
 import { api, uploadDocuments, type Conversation, type Job, type KBDocument, type PipelineGraph, type ProviderStatus } from '../../api'
@@ -35,12 +35,25 @@ function tabContext(key: string): StudioContext {
   return ({ chat: { conversation: n }, finetune: { finetune: n }, eval: { evaluation: n }, dataset: { dataset: n }, doc: { document: n } } as Record<string, StudioContext>)[kind] ?? {}
 }
 
-function loadTabs(pid: number | undefined): { tabs: string[]; active: string } {
+// `split` is the tab shown in a second pane to the right (null: one pane); `right` says which pane
+// has focus, so clicking a tab or opening something lands there.
+interface TabState { tabs: string[]; active: string; split: string | null; right: boolean }
+
+function loadTabs(pid: number | undefined): TabState {
   try {
     const v = JSON.parse(localStorage.getItem(`llmcoach.workbench.${pid}`) ?? 'null')
-    if (v && Array.isArray(v.tabs) && v.tabs.length) return v
+    if (v && Array.isArray(v.tabs) && v.tabs.length) {
+      const split = typeof v.split === 'string' && v.tabs.includes(v.split) ? v.split : null
+      return { tabs: v.tabs, active: v.active, split, right: false }
+    }
   } catch { /* unavailable */ }
-  return { tabs: ['welcome'], active: 'welcome' }
+  return { tabs: ['welcome'], active: 'welcome', split: null, right: false }
+}
+
+/** Shows `key` in the focused pane, adding it to the tab bar if needed. */
+function show(s: TabState, key: string): TabState {
+  const tabs = s.tabs.includes(key) ? s.tabs : [...s.tabs.filter((t) => t !== 'welcome' || t === s.split), key]
+  return s.split && s.right ? { ...s, tabs, split: key } : { ...s, tabs, active: key }
 }
 
 export default function WorkbenchStudio() {
@@ -53,7 +66,7 @@ export default function WorkbenchStudio() {
   const { data: jobs } = usePolling<Job[]>(() => (pid ? api.jobs({ limit: 25, project_id: pid }) : Promise.resolve([])), 4000, [pid])
   const { data: providers } = usePolling<ProviderStatus[]>(api.providerStatus, 20000)
   const { stats, logs } = useSystemStream()
-  const [{ tabs, active }, setTabState] = useState(() => loadTabs(pid))
+  const [{ tabs, active, split, right }, setTabState] = useState(() => loadTabs(pid))
   const narrow = () => window.matchMedia('(max-width: 899px)').matches
   // On a phone the explorer is an overlay: closed until asked for, and it gets out of the way after a pick.
   const [treeOpen, setTreeOpen] = useState(() => !narrow())
@@ -77,24 +90,35 @@ export default function WorkbenchStudio() {
     setTabState(state)
   }, [pid])
   useEffect(() => {
-    try { localStorage.setItem(`llmcoach.workbench.${pid}`, JSON.stringify({ tabs, active })) } catch { /* unavailable */ }
-  }, [pid, tabs, active])
+    try { localStorage.setItem(`llmcoach.workbench.${pid}`, JSON.stringify({ tabs, active, split })) } catch { /* unavailable */ }
+  }, [pid, tabs, active, split])
   useEffect(() => { if (!note) return; const t = window.setTimeout(() => setNote(null), 6000); return () => window.clearTimeout(t) }, [note])
 
   const open = useCallback((key: string) => {
     if (narrow()) setTreeOpen(false)
-    setTabState((s) => ({ tabs: s.tabs.includes(key) ? s.tabs : [...s.tabs.filter((t) => t !== 'welcome'), key], active: key }))
+    setTabState((s) => show(s, key))
   }, [])
   const close = useCallback((key: string) => setTabState((s) => {
     const i = s.tabs.indexOf(key)
     const rest = s.tabs.filter((t) => t !== key)
     const tabsLeft = rest.length ? rest : ['welcome']
-    return { tabs: tabsLeft, active: s.active === key ? tabsLeft[Math.max(0, i - 1)] ?? tabsLeft[0] : s.active }
+    const split = s.split === key ? null : s.split
+    return { tabs: tabsLeft, active: s.active === key ? tabsLeft[Math.max(0, i - 1)] ?? tabsLeft[0] : s.active, split, right: s.right && !!split }
   }), [])
   const rename = useCallback((from: string, to: string) => setTabState((s) => ({
-    tabs: [...new Set(s.tabs.map((t) => (t === from ? to : t)))], active: s.active === from ? to : s.active,
+    ...s, tabs: [...new Set(s.tabs.map((t) => (t === from ? to : t)))],
+    active: s.active === from ? to : s.active, split: s.split === from ? to : s.split,
   })), [])
-  const cycle = useCallback((d: number) => setTabState((s) => ({ ...s, active: s.tabs[(s.tabs.indexOf(s.active) + d + s.tabs.length) % s.tabs.length] })), [])
+  const cycle = useCallback((d: number) => setTabState((s) => {
+    const cur = s.split && s.right ? s.split : s.active
+    return show(s, s.tabs[(s.tabs.indexOf(cur) + d + s.tabs.length) % s.tabs.length])
+  }), [])
+  // Ctrl+\ as in an editor: split shows the focused tab (or the next one) on the right; again closes it.
+  const toggleSplit = useCallback(() => setTabState((s) => {
+    if (s.split) return { ...s, split: null, right: false }
+    const other = s.tabs.find((t) => t !== s.active) ?? s.active
+    return { ...s, split: other, right: true }
+  }), [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -102,18 +126,19 @@ export default function WorkbenchStudio() {
       if ((e.ctrlKey || e.metaKey) && (k === 'k' || k === 'p')) { e.preventDefault(); setPalette((p) => !p) }
       else if (e.ctrlKey && (k === '`' || e.code === 'Backquote')) { e.preventDefault(); setPanelOpen((p) => !p) }
       else if (e.ctrlKey && k === 'b') { e.preventDefault(); setTreeOpen((p) => !p) }
-      else if (e.altKey && k === 'w') { e.preventDefault(); close(active) }
+      else if (e.ctrlKey && e.key === '\\') { e.preventDefault(); toggleSplit() }
+      else if (e.altKey && k === 'w') { e.preventDefault(); close(split && right ? split : active) }
       else if (e.altKey && (e.key === '[' || e.key === ']')) { e.preventDefault(); cycle(e.key === ']' ? 1 : -1) }
       else if (e.key === 'Escape') setPalette(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, close, cycle])
+  }, [active, split, right, close, cycle, toggleSplit])
 
   const say = useCallback((m: string) => { setNote(m); reload() }, [reload])
   const upload = async (files: File[]) => {
     if (!pid || !files.length) return
-    try { const r = await uploadDocuments(pid, files, () => {}); say(`added ${r.documents.length} document(s)${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}`) } catch (e) { say(String(e)) }
+    try { const r = await uploadDocuments(pid, files, () => {}); say(`added ${r.documents.length - r.held.length} document(s)${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}${r.held.length ? `, held ${r.held.length} that may be private (see Knowledge)` : ''}`) } catch (e) { say(String(e)) }
   }
 
   const title = (key: string): [Icon, string] => {
@@ -145,6 +170,7 @@ export default function WorkbenchStudio() {
     add({ group: 'Alerts', label: 'Send a test alert', icon: TerminalSquare, run: async () => { try { await api.testNotify(); say('test alert sent') } catch (e) { say(String(e)) } } })
     add({ group: 'View', label: 'Toggle bottom panel', icon: PanelBottom, keys: 'Ctrl `', run: () => setPanelOpen((p) => !p) })
     add({ group: 'View', label: 'Toggle explorer', icon: FolderTree, keys: 'Ctrl B', run: () => setTreeOpen((p) => !p) })
+    add({ group: 'View', label: 'Split editor: two tabs side by side', icon: Columns2, keys: 'Ctrl \\', run: toggleSplit })
     for (const d of docs ?? []) add({ group: 'Document', label: d.filename, hint: `${d.chunk_count} chunks`, icon: FileText, run: () => open(`doc:${d.id}`) })
     for (const d of g.datasets) add({ group: 'Dataset', label: d.name, hint: `${d.rows} rows`, icon: Table2, run: () => open(`dataset:${d.id}`) })
     for (const f of g.finetunes) add({ group: 'Fine-tune', label: f.name, hint: f.status, icon: Zap, run: () => open(`finetune:${f.id}`) })
@@ -154,7 +180,7 @@ export default function WorkbenchStudio() {
     for (const s of STUDIOS.filter((x) => x.status === 'ready' && x.id !== 'workbench')) add({ group: 'Studio', label: `Switch to ${s.name}`, icon: LayoutGrid, run: () => { rememberStudio(s.id); navigate(s.path) } })
     for (const [label, path] of CLASSIC_PAGES) add({ group: 'Classic', label, icon: Settings, run: () => navigate(path) })
     return out
-  }, [g, docs, convs, jobs, open, navigate, say])
+  }, [g, docs, convs, jobs, open, navigate, say, toggleSplit])
 
   if (!project || !g) return <div className="studio-workbench grid h-full place-items-center wb-mono">loading workspace…</div>
 
@@ -162,8 +188,22 @@ export default function WorkbenchStudio() {
   const gpu = stats?.gpus[0]
   const running = jobs?.find((j) => j.status === 'running')
   const tabProps: TabProps = { g, open, rename, setOutput: setOutputJob, say }
-  const [, arg] = active.split(/:(.*)/)
-  const kind = active.split(':')[0]
+  const body = (key: string) => {
+    const [kind, arg] = key.split(/:(.*)/)
+    return (
+      <>
+        {kind === 'welcome' && <WelcomeTab />}
+        {kind === 'chat' && <ChatTab {...tabProps} id={arg} />}
+        {kind === 'doc' && <DocTab {...tabProps} id={Number(arg)} />}
+        {kind === 'dataset' && <DatasetTab {...tabProps} id={Number(arg)} />}
+        {kind === 'finetune' && <FinetuneTab {...tabProps} id={Number(arg)} />}
+        {kind === 'eval' && <EvalTab {...tabProps} id={Number(arg)} />}
+        {kind === 'job' && <JobTab {...tabProps} id={Number(arg)} />}
+        {kind === 'new-finetune' && <NewFinetuneTab {...tabProps} arg={arg ?? ''} />}
+      </>
+    )
+  }
+  const focused = split && right ? split : active
   const toggle = (k: string) => setCollapsed((c) => ({ ...c, [k]: !c[k] }))
   const group = (k: string, label: string, children: ReactNode) => (
     <div className="wb-g">
@@ -172,7 +212,7 @@ export default function WorkbenchStudio() {
     </div>
   )
   const row = (key: string, icon: ReactNode, label: string, n?: ReactNode, cls = '') => (
-    <button key={key} className={`wb-r ${active === key ? 'sel' : ''}`} onClick={() => open(key)} title={label}>{icon}<span>{label}</span>{n != null && <span className={`n ${cls}`}>{n}</span>}</button>
+    <button key={key} className={`wb-r ${focused === key ? 'sel' : ''}`} onClick={() => open(key)} title={label}>{icon}<span>{label}</span>{n != null && <span className={`n ${cls}`}>{n}</span>}</button>
   )
   const stClass = (s: string) => (['done', 'ready'].includes(s) ? 'okc' : ['failed', 'cancelled'].includes(s) ? 'badc' : 'runc')
 
@@ -180,7 +220,7 @@ export default function WorkbenchStudio() {
     <div className="studio-workbench flex h-full flex-col">
       <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <header className="wb-title">
-        <StudioSwitcher current="workbench" context={tabContext(active)}><span className="brand">LLMCoach</span></StudioSwitcher>
+        <StudioSwitcher current="workbench" context={tabContext(focused)}><span className="brand">LLMCoach</span></StudioSwitcher>
         <button className="wb-cmd" onClick={() => setPalette(true)}><Search className="h-3.5 w-3.5" />Search chats, docs, runs or run a command<kbd>Ctrl K</kbd></button>
         <select className="wb-proj" value={project.id} onChange={(e) => select(Number(e.target.value))} aria-label="Project">
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -223,23 +263,31 @@ export default function WorkbenchStudio() {
             {tabs.map((t) => {
               const [I, label] = title(t)
               return (
-                <div key={t} role="tab" aria-selected={t === active} className={`wb-tab ${t === active ? 'on' : ''}`} onClick={() => setTabState((s) => ({ ...s, active: t }))}
-                     onAuxClick={(e) => { if (e.button === 1) close(t) }}>
+                <div key={t} role="tab" aria-selected={t === focused}
+                     className={`wb-tab ${t === focused ? 'on' : ''} ${split && (t === active || t === split) && t !== focused ? 'shown' : ''}`}
+                     onClick={() => setTabState((s) => show(s, t))} onAuxClick={(e) => { if (e.button === 1) close(t) }}
+                     title={split ? (t === split ? 'In the right pane' : t === active ? 'In the left pane' : undefined) : undefined}>
                   <I /><span>{label}</span>
                   <button className="x" aria-label={`Close ${label}`} onClick={(e) => { e.stopPropagation(); close(t) }}>✕</button>
                 </div>
               )
             })}
           </div>
-          <div className="flex min-h-0 flex-1 flex-col" key={active}>
-            {kind === 'welcome' && <WelcomeTab />}
-            {kind === 'chat' && <ChatTab {...tabProps} id={arg} />}
-            {kind === 'doc' && <DocTab {...tabProps} id={Number(arg)} />}
-            {kind === 'dataset' && <DatasetTab {...tabProps} id={Number(arg)} />}
-            {kind === 'finetune' && <FinetuneTab {...tabProps} id={Number(arg)} />}
-            {kind === 'eval' && <EvalTab {...tabProps} id={Number(arg)} />}
-            {kind === 'job' && <JobTab {...tabProps} id={Number(arg)} />}
-            {kind === 'new-finetune' && <NewFinetuneTab {...tabProps} arg={arg ?? ''} />}
+          <div className="wb-grps">
+            <div className={`wb-grp ${split && !right ? 'focus' : ''}`} key={active}
+                 onMouseDownCapture={() => { if (right) setTabState((s) => ({ ...s, right: false })) }}>
+              {body(active)}
+            </div>
+            {split && (
+              <div className={`wb-grp split ${right ? 'focus' : ''}`} key={`split:${split}`}
+                   onMouseDownCapture={() => { if (!right) setTabState((s) => ({ ...s, right: true })) }}>
+                <div className="wb-ph">
+                  <span>{title(split)[1]}</span>
+                  <button aria-label="Close the split" title="Close the split (Ctrl \\)" onClick={toggleSplit}>✕</button>
+                </div>
+                {body(split)}
+              </div>
+            )}
           </div>
           {panelOpen && <BottomPanel tab={panelTab} setTab={setPanelTab} logs={logs} jobs={jobs ?? []} outputJob={outputJob ?? running?.id ?? null} openJob={(id) => open(`job:${id}`)} />}
         </div>

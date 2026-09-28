@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   api, attachToChat, isFinal, streamChat,
-  type ChatCardData, type Conversation, type Project, type SearchHit,
+  type AttachMode, type ChatCardData, type Conversation, type Project, type SearchHit,
 } from '../../api'
 
 /** A reply being streamed, before the server has saved it. */
@@ -196,7 +196,7 @@ export function useChatSession(project: Project | null) {
    * With a question, waits until the files are indexed and then asks it, so "what does this PDF
    * say about X?" with the PDF attached just works.
    */
-  const attach = useCallback(async (files: File[], mode: 'remember' | 'learn', question?: string) => {
+  const attach = useCallback(async (files: File[], mode: AttachMode, question?: string) => {
     if (pid == null || (!files.length && !question)) return
     const my = view.current
     const label = files.length === 1 ? files[0].name : `${files.length} files`

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections import deque
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -37,6 +38,32 @@ def _snapshot() -> dict:
     return {**system_stats().to_dict(), "running_job_id": manager.running_job_id}
 
 
+# The last five minutes of load, recorded while anyone is watching (at most one sample per two
+# seconds however many pages are open), so a page that connects draws its trend at once.
+HISTORY_SECONDS = 300
+history: deque[dict] = deque(maxlen=HISTORY_SECONDS // 2 + 10)
+
+
+def _record(stats: dict) -> None:
+    now = time.time()
+    if history and now - history[-1]["t"] / 1000 < 1.5:
+        return
+    g = (stats.get("gpus") or [None])[0] or {}
+    ram_total = stats.get("ram_total_gb") or 0
+    history.append({
+        "t": round(now * 1000), "cpu": stats.get("cpu_pct", 0),
+        "ram": stats["ram_used_gb"] / ram_total * 100 if ram_total else 0,
+        "gpuUtil": g.get("util_pct"),
+        "vram": g["vram_used_gb"] / g["vram_total_gb"] * 100 if g.get("vram_used_gb") is not None and g.get("vram_total_gb") else None,
+        "temp": g.get("temp_c"), "power": g.get("power_w"),
+    })
+
+
+def recent_history() -> list[dict]:
+    cutoff = (time.time() - HISTORY_SECONDS) * 1000
+    return [h for h in history if h["t"] >= cutoff]
+
+
 @router.get("/api/system")
 def get_system() -> dict:
     return _snapshot()
@@ -52,8 +79,10 @@ async def stream_system(ws: WebSocket) -> None:
     await ws.accept()
     last_log_id = 0
     try:
+        await ws.send_json({"type": "history", "samples": recent_history()})
         while True:
             stats = await asyncio.to_thread(_snapshot)
+            _record(stats)
             new_logs = [r for r in app_logs.records if r["id"] > last_log_id]
             if new_logs:
                 last_log_id = new_logs[-1]["id"]

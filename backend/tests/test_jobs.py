@@ -14,13 +14,23 @@ def wait_final(client, job_id: int, timeout: float = 30) -> dict:
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json() == {"ok": True, "version": "dev"}
 
 
 def test_system_stats(client):
     s = client.get("/api/system").json()
     assert s["backend"] in ("cpu", "cuda", "rocm")
     assert s["ram_total_gb"] > 0
+
+
+def test_system_stream_sends_recent_history_first(client):
+    with client.websocket_connect("/ws/system") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "history"
+        assert ws.receive_json()["type"] == "stats"  # recorded as it's sent
+    with client.websocket_connect("/ws/system") as ws:
+        samples = ws.receive_json()["samples"]
+        assert samples and {"t", "cpu", "ram", "gpuUtil", "vram"} <= set(samples[-1])
 
 
 def test_projects_crud(client):

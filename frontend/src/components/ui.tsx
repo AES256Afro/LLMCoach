@@ -10,8 +10,8 @@ export function Card({ title, actions, children, className = '' }: {
   return (
     <section className={`rounded-lg border border-line bg-panel ${className}`}>
       {(title || actions) && (
-        <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
-          <h2 className="text-sm font-medium">{title}</h2>
+        <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+          <h2 className="min-w-0 text-sm font-medium">{title}</h2>
           <div className="ml-auto flex items-center gap-2">{actions}</div>
         </header>
       )}

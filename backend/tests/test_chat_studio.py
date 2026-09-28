@@ -43,6 +43,67 @@ def test_remember_drop_indexes_files_and_text(client):
     assert empty.status_code == 400
 
 
+def test_private_looking_files_are_held_back(client):
+    pid = client.post("/api/projects", json={"name": "studio-held"}).json()["id"]
+    contacts = "\n".join(f"Customer {i}: person{i}@example.com" for i in range(8)).encode() + b"\n\n" + _text(2, "CRM")
+    r = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},
+                    files=[("files", ("contacts.md", io.BytesIO(contacts), "text/markdown")),
+                           ("files", ("faq.md", io.BytesIO(_text(3, "FAQ")), "text/markdown"))])
+    card = r.json()["message"]["data"]
+    assert [d["filename"] for d in card["documents"]] == ["faq.md"]
+    held = card["held"]
+    assert [h["filename"] for h in held] == ["contacts.md"] and held[0]["findings"][0]["kind"] == "emails"
+    wait_final(client, card["ingest_job_id"])
+    wait_final(client, card["learn"]["job_id"])
+    docs = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs["contacts.md"]["status"] == "held"  # stored, but nothing can quote it
+    assert docs["contacts.md"]["error"].startswith("Held back: may contain list of email addresses")
+    assert docs["faq.md"]["status"] == "ready"
+
+    # "Index anyway" is an ordinary re-index of that one document.
+    job = client.post(f"/api/projects/{pid}/documents/reindex", json={"doc_ids": [held[0]["doc_id"]]}).json()
+    assert wait_final(client, job["id"])["status"] == "done"
+    docs = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs["contacts.md"]["status"] == "ready"
+
+    # Only held back, nothing else: the conversation title says so. The Classic upload holds too,
+    # and check=false skips the check.
+    only = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "remember"},
+                       files=[("files", ("keys.md", io.BytesIO(b"password = hunter2hunter2\n" + _text(1, "Ops")), "text/markdown"))]).json()
+    assert only["conversation"]["title"] == "Held back 1 file: it looks private"
+    up = client.post(f"/api/projects/{pid}/documents", files=[("files", ("keys2.md", io.BytesIO(b"token: sk-" + b"a" * 40), "text/markdown"))]).json()
+    assert up["job"] is None and up["held"][0]["filename"] == "keys2.md"
+    assert client.delete(f"/api/projects/{pid}/documents/{up['held'][0]['doc_id']}").status_code == 204  # "Remove"
+    free = client.post(f"/api/projects/{pid}/documents?check=false",
+                       files=[("files", ("keys3.md", io.BytesIO(b"password = hunter3hunter3\n" + _text(1, "Ops2")), "text/markdown"))]).json()
+    assert free["held"] == [] and free["job"] is not None
+    wait_final(client, free["job"]["id"])
+
+
+def test_review_drop_waits_for_the_owner(client, fake):
+    pid = client.post("/api/projects", json={"name": "studio-review"}).json()["id"]
+    r = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "review", "model": "ollama/chatty:1b"},
+                    files=[("files", ("manual.md", io.BytesIO(_text(4, "Manual")), "text/markdown"))])
+    out = r.json()
+    learn = out["message"]["data"]["learn"]
+    assert learn["review"] is True and learn["dataset_name"] == "To review: manual.md"
+    assert out["conversation"]["title"] == "Added 1 file; writing practice Q&A for you to review"
+    wait_final(client, out["message"]["data"]["ingest_job_id"])
+    assert wait_final(client, learn["job_id"])["status"] == "done"
+    staged = client.get(f"/api/projects/{pid}/datasets/{learn['dataset_id']}").json()
+    assert staged["source"] == "review" and staged["row_count"] >= 3
+    datasets = client.get(f"/api/projects/{pid}/datasets").json()
+    assert not any(d["source"] == "chat" for d in datasets)  # nothing joined "Learned in chat" yet
+
+    acc = client.post(f"/api/projects/{pid}/datasets/{learn['dataset_id']}/accept", json={"rows": [0, 2, 2, 99]}).json()
+    assert acc["accepted"] == 2 and acc["discarded"] == staged["row_count"] - 2
+    assert acc["dataset"]["name"] == "Learned in chat" and acc["dataset"]["row_count"] == 2
+    assert sum(acc["dataset"]["splits"].values()) == 2
+    assert client.get(f"/api/projects/{pid}/datasets/{learn['dataset_id']}").status_code == 404
+    # Only review datasets can be accepted.
+    assert client.post(f"/api/projects/{pid}/datasets/{acc['dataset']['id']}/accept", json={"rows": [0]}).status_code == 409
+
+
 def test_learn_drop_appends_and_keeps_splits(client, fake):
     pid = client.post("/api/projects", json={"name": "studio-learn"}).json()["id"]
     first = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},
