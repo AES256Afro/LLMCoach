@@ -49,7 +49,12 @@ def test_export_and_import_a_project(client, fake):
         manifest = json.loads(z.read("manifest.json"))
         assert manifest["project"]["settings"]["chunk_size"] == 700
         assert [d["filename"] for d in manifest["documents"]] == ["Harbor Ferry Guide.html"]
-        assert z.read("adapters/" + str(manifest["finetunes"][0]["key"]) + "/sub/weights.bin") == b"\x00\x01weights"
+        key = manifest["finetunes"][0]["key"]
+        assert z.read(f"adapters/{key}/sub/weights.bin") == b"\x00\x01weights"
+        readme = z.read(f"adapters/{key}/README.md").decode()  # the model card travels with the adapter
+        assert readme.startswith("# faq tune") and "“faq” (upload): 12 examples" in readme and "the adapter in use" in readme
+    card = client.get(f"/api/projects/{pid}/finetunes/{key}/card")
+    assert card.status_code == 200 and card.text.startswith("# faq tune") and "It hasn't been evaluated yet." in card.text
     without = client.get(f"/api/projects/{pid}/export?adapters=false")
     assert json.loads(zipfile.ZipFile(io.BytesIO(without.content)).read("manifest.json"))["finetunes"] == []
 
