@@ -73,8 +73,43 @@ export function Providers() {
             </Card>
           )
         })}
+        <SpeechCard />
       </div>
     </>
+  )
+}
+
+/** Where recordings (voice notes, meetings) are sent to be transcribed before they're indexed. */
+function SpeechCard() {
+  const [url, setUrl] = useState('')
+  const [saved, setSaved] = useState<{ url: string; env_url: string } | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  useEffect(() => { api.speech().then((r) => { setSaved(r); setUrl(r.url) }).catch(() => {}) }, [])
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    try {
+      const r = await api.saveSpeech(url)
+      setSaved(r)
+      setUrl(r.url)
+      setNote(r.url ? 'Saved. Recordings added from now on are transcribed there.' : 'Cleared.')
+    } catch (err) { setNote(err instanceof Error ? err.message : String(err)) }
+  }
+  return (
+    <Card title="Speech to text">
+      <p className="mb-3 text-xs text-muted">
+        Recordings (MP3, M4A, WAV, OGG, Opus, WebM, FLAC) are transcribed by a Whisper service and then indexed like any
+        document. BoxPilot's catalog has one: install <em>Whisper (speech to text)</em> and give its address here, usually
+        <code className="mx-1 font-mono">http://host.docker.internal:9002</code>. An OpenAI-compatible server works too; give its
+        <code className="mx-1 font-mono">/v1</code> address.
+      </p>
+      <form onSubmit={save} className="flex flex-wrap gap-2">
+        <input className="min-w-0 flex-1 rounded border border-line bg-bg px-2 py-1.5 font-mono text-sm outline-none focus:border-accent"
+               value={url} onChange={(e) => setUrl(e.target.value)} placeholder={saved?.env_url || 'http://bigbox:9002'} />
+        <Button type="submit" disabled={saved != null && url === saved.url}>Save</Button>
+      </form>
+      {saved && !saved.url && <p className="mt-2 text-xs text-warn">Not set: recordings can't be read yet.</p>}
+      {note && <p className="mt-2 text-xs text-muted">{note}</p>}
+    </Card>
   )
 }
 

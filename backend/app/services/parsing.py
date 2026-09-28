@@ -18,7 +18,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-SUPPORTED = {".pdf", ".md", ".markdown", ".txt", ".text", ".rst", ".csv", ".json", ".html", ".htm", ".docx"}
+from .speech import AUDIO, SpeechError, transcribe
+
+SUPPORTED = {".pdf", ".md", ".markdown", ".txt", ".text", ".rst", ".csv", ".json", ".html", ".htm", ".docx"} | AUDIO
 
 Section = tuple[str, int | None]
 
@@ -85,11 +87,36 @@ def _ocr_cached(path: Path) -> list[Section]:
     return sections
 
 
+def _transcript_cached(path: Path) -> str:
+    from ..config import settings
+
+    cache = settings.data_dir / "transcripts" / f"{hashlib.sha256(path.read_bytes()).hexdigest()}.txt"
+    try:
+        return cache.read_text(encoding="utf-8")
+    except OSError:
+        pass
+    text = transcribe(path)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(text, encoding="utf-8")
+    return text
+
+
 def parse(path: Path, ocr: bool = True) -> list[Section]:
-    """`ocr=False` skips reading scans, for callers someone is waiting on (an upload's check)."""
+    """`ocr=False` skips the slow readers (OCR for scans, speech to text for recordings), for callers
+    someone is waiting on (an upload's check); the indexing job reads those files."""
     ext = path.suffix.lower()
     if ext not in SUPPORTED:
         raise ParseError(f"unsupported file type {ext or '(none)'}; supported: {', '.join(sorted(SUPPORTED))}")
+    if ext in AUDIO:
+        if not ocr:
+            raise ParseError(f"{path.name} is a recording; it's transcribed when it's indexed.")
+        try:
+            text = _clean(_transcript_cached(path))
+        except SpeechError as e:
+            raise ParseError(str(e)) from e
+        if not text:
+            raise ParseError(f"no speech found in {path.name}.")
+        return [(text, None)]
     if ext == ".pdf":
         sections = _pdf(path)
     elif ext == ".docx":

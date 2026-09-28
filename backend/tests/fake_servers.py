@@ -138,6 +138,23 @@ def fake_app() -> FastAPI:
     def logo():
         return Response(b"PNG-bytes", media_type="image/png")
 
+    # ---- Whisper (whisper-asr-webservice, and the OpenAI-style route) ------------------
+    from fastapi import UploadFile
+
+    app.state.asr_calls = 0
+
+    @app.post("/asr")
+    async def asr(audio_file: UploadFile, task: str = "transcribe", output: str = "txt"):
+        app.state.asr_calls += 1
+        await audio_file.read()
+        return PlainTextResponse(f"Voice note {audio_file.filename}. Remember that the harbor ferry leaves at seven forty "
+                                 "and the lantern is lit at dusk. " * 3)
+
+    @app.post("/v1/audio/transcriptions")
+    async def oai_transcribe(file: UploadFile):
+        await file.read()
+        return {"text": f"Transcript of {file.filename}: the office opens at eight."}
+
     # ---- ntfy ---------------------------------------------------------------------
     app.state.ntfy = []
 
