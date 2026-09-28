@@ -2,6 +2,7 @@ import re
 import shutil
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -9,6 +10,7 @@ from ..config import settings
 from ..db import Dataset, DatasetStatus, FineTune, FineTuneStatus, Job, JobStatus, engine, get_session, utcnow
 from ..services import datasets as ds
 from ..services import training
+from ..services.modelcard import model_card
 from ..services.jobs import FINISH_HOOKS, manager
 from .projects import get_project_or_404
 
@@ -104,6 +106,12 @@ def get_finetune(project_id: int, ft_id: int, session: Session = Depends(get_ses
     if ft is None or ft.project_id != project_id:
         raise HTTPException(404, "fine-tune not found")
     return ft
+
+
+@router.get("/api/projects/{project_id}/finetunes/{ft_id}/card", response_class=PlainTextResponse)
+def finetune_card(project_id: int, ft_id: int, session: Session = Depends(get_session)) -> str:
+    """The fine-tune's model card, in Markdown."""
+    return model_card(session, get_finetune(project_id, ft_id, session))
 
 
 @router.delete("/api/projects/{project_id}/finetunes/{ft_id}", status_code=204)

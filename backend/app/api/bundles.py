@@ -23,6 +23,7 @@ from ..config import settings
 from ..db import (Conversation, Dataset, DatasetStatus, Document, FineTune, FineTuneStatus, Message, Project,
                   get_session, utcnow)
 from ..services import datasets as ds
+from ..services.modelcard import model_card
 from .knowledge import MAX_FILE_BYTES, store_documents, submit_ingest
 from .projects import _out as project_out
 from .projects import get_project_or_404
@@ -71,7 +72,10 @@ def _write_bundle(project_id: int, adapters: bool, out: Path) -> None:
                 continue
             prefix = f"adapters/{f.id}/"
             for file in sorted(p for p in adapter.rglob("*") if p.is_file()):
+                if file.relative_to(adapter).as_posix() == "README.md":
+                    continue  # PEFT's placeholder; the model card replaces it
                 z.write(file, prefix + file.relative_to(adapter).as_posix())
+            z.writestr(prefix + "README.md", model_card(s, f))
             manifest["finetunes"].append({
                 "key": f.id, "name": f.name, "base_model": f.base_model, "method": f.method, "backend": f.backend,
                 "dataset": f.dataset_id if f.dataset_id in kept else None, "config": f.config, "metrics": f.metrics,
