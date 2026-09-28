@@ -79,6 +79,11 @@ in Classic and an Inbox section in the Chat studio's context rail):
   the indexing job read a scan once between them; an upload's check skips OCR (someone is waiting),
   and the indexing job reads the scan. English only unless more `tesseract-ocr-<lang>` packages are
   added to the image.
+- **Voice notes and recordings**: MP3, M4A, WAV, OGG, Opus, WebM, FLAC and AAC files are transcribed by
+  a Whisper service (BoxPilot's catalog app, `POST /asr`, or an OpenAI-compatible `/v1` server) and
+  indexed as text; transcripts are cached by hash like OCR. The address is set on the Providers page
+  or with `LLMCOACH_WHISPER_URL`. For BoxPilot: add `LLMCOACH_WHISPER_URL` to the catalog entry and a
+  `connections` note for the Whisper app.
 
 L2 is complete.
 

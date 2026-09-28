@@ -11,7 +11,7 @@ import { ModelSelect } from '../components/ModelSelect'
 import { Button, Card, Empty, fmtTime } from '../components/ui'
 import { useProject } from '../hooks/project'
 
-const ACCEPT = '.pdf,.md,.markdown,.txt,.text,.rst,.csv,.json,.html,.htm,.docx'
+const ACCEPT = '.pdf,.md,.markdown,.txt,.text,.rst,.csv,.json,.html,.htm,.docx,.mp3,.m4a,.wav,.ogg,.opus,.webm,.flac,.aac'
 
 export function KnowledgeBase() {
   const { current: project, reload: reloadProjects } = useProject()
@@ -161,7 +161,7 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
         }`}
       >
         <div className="text-sm">Drop files here or <span className="text-accent">browse</span></div>
-        <div className="mt-1 text-xs text-muted">PDF, Markdown, text, HTML, DOCX, CSV, JSON · up to 100 MB each</div>
+        <div className="mt-1 text-xs text-muted">PDF, Markdown, text, HTML, DOCX, CSV, JSON, or recordings · up to 100 MB each</div>
         <input ref={input} type="file" multiple accept={ACCEPT} className="hidden"
                onChange={(e) => { send([...(e.target.files ?? [])]); e.target.value = '' }} />
       </div>
