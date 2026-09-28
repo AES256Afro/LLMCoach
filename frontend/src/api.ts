@@ -439,6 +439,7 @@ export function errorDetail(detail: unknown): string | undefined {
 export type SourceMode = 'remember' | 'learn'
 export type SourceScan = 'all' | 'secrets' | 'off'
 export type FileStatus = 'waiting' | 'added' | 'duplicate' | 'skipped' | 'quarantined' | 'rejected' | 'failed'
+  | 'gone' | 'forgotten' // deleted from the folder: document kept | document removed too
 
 export interface Source {
   id: number
@@ -450,6 +451,7 @@ export interface Source {
   scan: SourceScan
   enabled: boolean
   poll_seconds: number
+  mirror_deletes: boolean // a file deleted from the folder takes its document with it
   last_scan_at: string | null
   last_error: string | null
   created_at: string
@@ -477,6 +479,7 @@ export interface SourceFile {
   first_seen_at: string
   processed_at: string | null
   reviewed_at: string | null
+  missing_at: string | null
   source_name?: string | null
 }
 
@@ -702,7 +705,7 @@ export const api = {
   sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
   createSource: (pid: number, body: { name?: string; folder: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
     request<Source>(`/api/projects/${pid}/sources`, { method: 'POST', body: JSON.stringify(body) }),
-  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds'>>) =>
+  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes'>>) =>
     request<Source>(`/api/projects/${pid}/sources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSource: (pid: number, id: number) => request<void>(`/api/projects/${pid}/sources/${id}`, { method: 'DELETE' }),
   scanSource: (pid: number, id: number) => request<PollResult>(`/api/projects/${pid}/sources/${id}/scan`, { method: 'POST' }),

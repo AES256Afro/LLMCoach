@@ -39,6 +39,8 @@ TICK_SECONDS = 5
 MODES = ("remember", "learn")
 SCANS = ("all", "secrets", "off")
 FINAL = ("added", "duplicate", "skipped", "quarantined", "rejected", "failed")
+GONE = ("gone", "forgotten")  # deleted from the folder, with or without its document
+FORGET_AFTER_SECONDS = 60  # how long a deleted file stays away before its document goes too
 # Editors, sync tools and browsers write these while a real file is still on its way.
 _TEMP = re.compile(r"(^~\$|^\.|\.(tmp|part|partial|crdownload|download|swp)$)", re.I)
 
@@ -148,6 +150,55 @@ async def _process(s: Session, src: Source, f: SourceFile, root: Path, review: b
     return None
 
 
+def _forget(s: Session, f: SourceFile) -> None:
+    """Removes the document a deleted file added, unless another watched copy still holds it."""
+    doc = s.get(Document, f.doc_id) if f.doc_id else None
+    if doc is not None:
+        heir = s.exec(select(SourceFile).where(SourceFile.doc_id == doc.id, SourceFile.status == "duplicate",
+                                               SourceFile.id != f.id, SourceFile.missing_at == None)).first()  # noqa: E711
+        if heir is not None:
+            heir.status = "added"  # the same content is still in a watched folder: it keeps the document
+            s.add(heir)
+            f.status, f.missing_at = "gone", None
+            return
+        if document_busy(s, doc) is not None:
+            return  # being indexed; the next look tries again
+    f.status, f.doc_id, f.missing_at = "forgotten", None, None
+    s.add(f)
+    if doc is not None:
+        remove_document(s, doc)
+
+
+def _handle_missing(s: Session, src: Source, rows: dict[str, SourceFile], present: set[str]) -> str | None:
+    """Settles ledger rows whose file is no longer in the folder. Returns a warning, if any.
+
+    Files that added nothing are simply dropped from the ledger. An added file becomes "gone" and its
+    document stays, unless the source mirrors deletions: then the document is removed once the file
+    has been away for FORGET_AFTER_SECONDS (a sync tool swapping a file in place doesn't count)."""
+    now = utcnow()
+    kept = 0
+    for rel, f in rows.items():
+        if rel in present or f.status in GONE:
+            continue
+        if f.status != "added":
+            s.delete(f)  # nothing in the knowledge base came from it
+        elif not src.mirror_deletes:
+            f.status, f.missing_at = "gone", None
+            s.add(f)
+        elif not present:
+            kept += 1  # the whole folder is empty: far more likely an unmounted share than a clear-out
+        elif f.missing_at is None:
+            f.missing_at = now
+            s.add(f)
+        elif (now - f.missing_at.replace(tzinfo=now.tzinfo)).total_seconds() >= FORGET_AFTER_SECONDS:
+            _forget(s, f)
+    s.commit()
+    if kept:
+        return (f"The folder looks empty, so its {kept} document{'s were' if kept > 1 else ' was'} kept in the "
+                "knowledge base. If you emptied it on purpose, remove them on the Knowledge page.")
+    return None
+
+
 async def _after_added(s: Session, src: Source, doc_ids: list[int]) -> dict:
     """Indexes the new documents and, for a "learn" source, queues practice Q&A after them."""
     from .chat import default_chat_model
@@ -192,8 +243,18 @@ async def poll_source(source_id: int) -> dict:
             ready: list[SourceFile] = []
             for rel, size, mtime in listing:
                 f = rows.get(rel)
+                if f is not None and f.missing_at is not None:
+                    f.missing_at = None  # back again before its document was removed
+                    s.add(f)
                 if f is None:
                     f = SourceFile(source_id=src.id, project_id=src.project_id, relpath=rel, size_bytes=size, mtime=mtime)
+                    s.add(f)
+                    if now - mtime >= OLD_FILE_SECONDS:
+                        ready.append(f)
+                elif f.status in GONE:
+                    # Put back after it was deleted: read it again. If its document was kept and the
+                    # content is the same, _process just marks it added.
+                    f.size_bytes, f.mtime, f.status = size, mtime, "waiting"
                     s.add(f)
                     if now - mtime >= OLD_FILE_SECONDS:
                         ready.append(f)
@@ -207,6 +268,7 @@ async def poll_source(source_id: int) -> dict:
                 elif f.status == "waiting" and now - mtime >= SETTLE_SECONDS:
                     ready.append(f)
             s.commit()
+            warning = _handle_missing(s, src, rows, {rel for rel, _, _ in listing})
 
             counts: dict[str, int] = {}
             new_docs: list[int] = []
@@ -225,7 +287,7 @@ async def poll_source(source_id: int) -> dict:
                 notify.send("review", f"{len(held)} file{'s' if len(held) > 1 else ''} held for review",
                             f"In “{src.name}”: {', '.join(held[:5])}{more}. They may contain secrets or personal data.",
                             4, "lock")
-            src.last_scan_at, src.last_error = utcnow(), None
+            src.last_scan_at, src.last_error = utcnow(), warning
             jobs = await _after_added(s, src, new_docs)
             s.add(src)
             s.commit()
@@ -300,6 +362,7 @@ class SourceCreate(BaseModel):
     mode: str = "remember"
     scan: str = "all"
     poll_seconds: int = 30
+    mirror_deletes: bool = False
 
 
 class SourceUpdate(BaseModel):
@@ -308,6 +371,7 @@ class SourceUpdate(BaseModel):
     scan: str | None = None
     enabled: bool | None = None
     poll_seconds: int | None = None
+    mirror_deletes: bool | None = None
 
 
 def _validate(mode: str | None, scan: str | None, poll: int | None) -> None:
@@ -330,7 +394,8 @@ def create_source(project_id: int, body: SourceCreate, session: Session = Depend
         if folder == "." or other.folder == "." or a == b or a in b.parents or b in a.parents:
             raise HTTPException(409, f"'{folder}' overlaps '{other.folder}', which '{other.name}' already watches")
     src = Source(project_id=project_id, name=(body.name or (folder if folder != "." else "Inbox")).strip()[:80],
-                 folder=folder, mode=body.mode, scan=body.scan, poll_seconds=body.poll_seconds)
+                 folder=folder, mode=body.mode, scan=body.scan, poll_seconds=body.poll_seconds,
+                 mirror_deletes=body.mirror_deletes)
     source_root(src).mkdir(parents=True, exist_ok=True)
     session.add(src)
     session.commit()

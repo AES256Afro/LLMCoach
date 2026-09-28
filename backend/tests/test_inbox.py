@@ -177,6 +177,61 @@ def test_changed_file_replaces_its_document(client):
     assert len(client.get(f"/api/projects/{pid}/documents").json()) == 1
 
 
+def test_deleted_files_are_kept_or_forgotten(client, monkeypatch):
+    from app.api import inbox as inbox_api
+
+    pid = _project(client, "inbox-deletes")
+    keep = _source(client, pid, "deletes-keep")
+    mirror = _source(client, pid, "deletes-mirror", mirror_deletes=True)
+    assert mirror["mirror_deletes"] is True and keep["mirror_deletes"] is False
+    kroot, mroot = settings.inbox_root / "deletes-keep", settings.inbox_root / "deletes-mirror"
+    a = _write(kroot, "a.md", _text("Alpha"))
+    b = _write(mroot, "b.md", _text("Bravo"))
+    c = _write(mroot, "c.md", _text("Charlie"))
+    stay = _write(mroot, "stay.md", _text("Echo"))
+    keys = _write(mroot, "keys.md", f"aws = {AWS}\n" + _text("Delta"))
+    scan_ = lambda src: client.post(f"/api/projects/{pid}/sources/{src['id']}/scan").json()  # noqa: E731
+    wait_final(client, scan_(mirror)["ingest_job_id"])
+    _write(kroot, "copy-of-b.md", _text("Bravo"))  # the same content in the other folder: a duplicate
+    wait_final(client, scan_(keep)["ingest_job_id"])
+    assert _files(client, pid, keep["id"])["copy-of-b.md"]["status"] == "duplicate"
+    docs = lambda: sorted(d["filename"] for d in client.get(f"/api/projects/{pid}/documents").json())  # noqa: E731
+    assert docs() == ["a.md", "b.md", "c.md", "stay.md"]
+
+    for p in (a, b, c, keys):
+        p.unlink()
+    scan_(keep)
+    assert _files(client, pid, keep["id"])["a.md"]["status"] == "gone"  # this folder doesn't mirror deletions
+    scan_(mirror)
+    files = _files(client, pid, mirror["id"])
+    assert "keys.md" not in files  # nothing came of it, so its row just goes
+    assert client.get(f"/api/projects/{pid}/inbox/review").json() == []
+    assert files["c.md"]["status"] == "added" and files["c.md"]["missing_at"]  # one look isn't enough
+    monkeypatch.setattr(inbox_api, "FORGET_AFTER_SECONDS", 0)
+    scan_(mirror)
+    files = _files(client, pid, mirror["id"])
+    assert files["c.md"]["status"] == "forgotten" and files["c.md"]["doc_id"] is None
+    # b.md's document lives on: copy-of-b.md, still in a watched folder, holds the same content.
+    assert files["b.md"]["status"] == "gone"
+    assert _files(client, pid, keep["id"])["copy-of-b.md"]["status"] == "added"
+    assert docs() == ["a.md", "b.md", "stay.md"]
+
+    # Put back: read again, and the kept document is recognised rather than added twice.
+    old = _files(client, pid, keep["id"])["a.md"]["doc_id"]
+    _write(kroot, "a.md", _text("Alpha"))
+    scan_(keep)
+    back = _files(client, pid, keep["id"])["a.md"]
+    assert back["status"] == "added" and back["doc_id"] == old and docs() == ["a.md", "b.md", "stay.md"]
+
+    # An empty folder is most likely an unmounted share: nothing is removed.
+    stay.unlink()
+    scan_(mirror)
+    scan_(mirror)
+    assert _files(client, pid, mirror["id"])["stay.md"]["status"] == "added"
+    src = next(x for x in client.get(f"/api/projects/{pid}/sources").json() if x["id"] == mirror["id"])
+    assert "looks empty" in src["last_error"] and "stay.md" in docs()
+
+
 def test_upload_into_a_learning_source(client):
     pid = _project(client, "inbox-upload")
     src = _source(client, pid, "upload", mode="learn")

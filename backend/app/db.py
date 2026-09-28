@@ -232,6 +232,9 @@ class Source(SQLModel, table=True):
     scan: str = "all"  # "all" (secrets and personal data) | "secrets" | "off"
     enabled: bool = True
     poll_seconds: int = 60
+    # When a file is deleted from the folder, remove its document from the knowledge base too.
+    # Off by default: many people use the folder as a drop box and clear it once files are in.
+    mirror_deletes: bool = False
     last_scan_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -241,7 +244,8 @@ class SourceFile(SQLModel, table=True):
     """One file a source has seen: the inbox's ledger.
 
     status: waiting (still being copied, or not looked at yet) | added | duplicate | skipped |
-    quarantined (held for review) | rejected | failed."""
+    quarantined (held for review) | rejected | failed | gone (deleted from the folder, its document
+    kept) | forgotten (deleted from the folder, and its document with it)."""
 
     id: int | None = Field(default=None, primary_key=True)
     source_id: int = Field(foreign_key="source.id", index=True)
@@ -257,6 +261,7 @@ class SourceFile(SQLModel, table=True):
     first_seen_at: datetime = Field(default_factory=utcnow)
     processed_at: datetime | None = None
     reviewed_at: datetime | None = None
+    missing_at: datetime | None = None  # first look that didn't find the file
 
 
 class ApiToken(SQLModel, table=True):
