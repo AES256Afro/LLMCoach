@@ -67,8 +67,10 @@ in Classic and an Inbox section in the Chat studio's context rail):
 - **Web pages** (0.9.0): `/add <url>` or `/learn <url>` in the chat, or the address box on the Knowledge
   page, fetches a page, PDF or text file (`services/web.py`: http(s) only, the size limit applies, the
   type decides the parser, HTML is named after its `<title>`), keeps the final address as
-  `Document.source_url`, and adds it like an upload, check included. Not yet: re-reading pages on a
-  schedule, sitemaps and RSS.
+  `Document.source_url`, and adds it like an upload, check included. A **web source** keeps a list of
+  pages (up to 200) up to date: each look fetches them into `data/web/<id>` and rewrites only pages
+  that changed, so the ledger replaces just those documents; a page that can't be fetched keeps its
+  last version, and one taken off the list counts as a deleted file. Not yet: sitemaps and RSS.
 
 L2 is complete.
 

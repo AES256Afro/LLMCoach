@@ -101,6 +101,13 @@ def fake_app() -> FastAPI:
     def redirect_page():
         return RedirectResponse("/pages/harbor.html")
 
+    app.state.page_version = 1
+
+    @app.get("/pages/changelog.html")
+    def changelog():
+        v = app.state.page_version
+        return HTMLResponse(f"<title>Changelog</title>" + f"<p>Release {v}: the harbor app now shows ferry times. </p>" * 10)
+
     @app.get("/pages/notes.txt")
     def notes_page():
         return PlainTextResponse("Opening hours: the harbor office opens at 08:00 on weekdays. " * 10)
