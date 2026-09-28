@@ -108,5 +108,6 @@ now starts again instead of failing.
 Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmcoach:X.Y.Z` → bump
 `catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio), 0.4.0 (inbox and learning loop),
 0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas), 0.7.0 (Workbench, Field Notebook, Friendly Studio, export to
-Ollama; in BoxPilot 1.121.0 with the inbox volume). Each tag also publishes `X.Y.Z-cuda` (from 0.8.0), and
-`/api/health` reports which version is running.
+Ollama; in BoxPilot 1.121.0 with the inbox volume), 0.8.0 (buckets, held uploads, Review first, split panes; BoxPilot
+1.123.0), 0.9.0 (web pages and feeds, OCR) and 0.10.0 (moving projects). Each tag also publishes `X.Y.Z-cuda` (from
+0.8.0), and `/api/health` reports which version is running.
