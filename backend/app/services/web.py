@@ -43,6 +43,36 @@ def page_name(url: str, ext: str, data: bytes) -> str:
     return title if title.lower().endswith(ext) else f"{title}{ext}"
 
 
+_LOC = re.compile(rb"<loc>\s*(.*?)\s*</loc>", re.I | re.S)
+
+
+def is_sitemap(url: str) -> bool:
+    return PurePosixPath(urlsplit(url).path).name.lower().endswith(".xml")
+
+
+async def sitemap_pages(url: str, limit: int) -> list[str]:
+    """The page addresses a sitemap lists, following a sitemap index one level down."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20, read=60), follow_redirects=True, max_redirects=5) as client:
+        async def locs(u: str) -> list[str]:
+            try:
+                r = await client.get(check_url(u))
+            except httpx.HTTPError as e:
+                raise WebError(f"couldn't fetch {u}: {e}") from e
+            if r.status_code >= 400:
+                raise WebError(f"{u} answered {r.status_code} {r.reason_phrase}")
+            return [html.unescape(m.decode("utf-8", "replace")) for m in _LOC.findall(r.content[:20_000_000])]
+
+        pages: list[str] = []
+        for loc in await locs(url):
+            if is_sitemap(loc):
+                pages += [p for p in await locs(loc) if not is_sitemap(p)]
+            else:
+                pages.append(loc)
+            if len(pages) >= limit:
+                break
+    return list(dict.fromkeys(pages))[:limit]
+
+
 async def fetch(url: str, max_bytes: int) -> tuple[str, bytes, str]:
     """(file name, bytes, final URL). Follows redirects; refuses types LLMCoach can't read."""
     url = check_url(url)

@@ -423,7 +423,7 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
         {kind === 'web' ? (
           <>
             <div className="sm:col-span-2">
-              <Field label="Pages, one address per line" hint="Each is fetched on every look; a page that changed replaces its document. Up to 200.">
+              <Field label="Pages, one address per line" hint="Each is fetched on every look; a page that changed replaces its document. A sitemap.xml address stands for every page it lists. Up to 200 pages.">
                 <textarea className={`${inputCls} h-28 font-mono text-xs`} value={urls} onChange={(e) => setUrls(e.target.value)}
                           placeholder={'https://docs.example.com/install\nhttps://docs.example.com/faq'} required />
               </Field>

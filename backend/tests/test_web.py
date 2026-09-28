@@ -49,6 +49,16 @@ def test_web_source_rereads_its_pages(client, fake):
     assert client.delete(f"/api/projects/{pid}/sources/{src['id']}").status_code == 204
 
 
+def test_web_source_follows_a_sitemap(client, fake):
+    pid = client.post("/api/projects", json={"name": "web-sitemap"}).json()["id"]
+    src = client.post(f"/api/projects/{pid}/sources", json={"kind": "web", "urls": [f"{fake.url}/pages/sitemap.xml"]}).json()
+    out = client.post(f"/api/projects/{pid}/sources/{src['id']}/scan").json()
+    assert out["processed"] == {"added": 2}  # the index -> one sitemap -> two pages
+    wait_final(client, out["ingest_job_id"])
+    docs = {d["filename"]: d["source_url"] for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs == {"Harbor Ferry Guide.html": f"{fake.url}/pages/harbor.html", "notes.txt": f"{fake.url}/pages/notes.txt"}
+
+
 def test_add_a_web_page(client, fake):
     pid = client.post("/api/projects", json={"name": "web-pages"}).json()["id"]
     r = client.post(f"/api/projects/{pid}/documents/url", json={"url": f"{fake.url}/pages/redirect"})
