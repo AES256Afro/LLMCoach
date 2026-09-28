@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import {
   AlertTriangle, BarChart3, BookOpen, Brain, Check, FileText, Info, Loader2, Play, Terminal, X,
 } from 'lucide-react'
-import { api, isFinal, type ChatCardData, type Dataset, type EvalRun, type FineTune, type HeldFile, type JobStatus } from '../../api'
+import { api, isFinal, type ChatCardData, type Dataset, type DatasetRow, type EvalRun, type FineTune, type HeldFile, type JobStatus } from '../../api'
 import { stripAnsi } from '../../components/ansi'
 import { HeldFiles } from '../../components/HeldFiles'
 import { useProject } from '../../hooks/project'
@@ -63,7 +63,7 @@ function fmtBytes(n: number) {
 
 // ---- files dropped into the chat ------------------------------------------------------------
 
-interface LearnInfo { dataset_id: number; dataset_name: string; job_id: number; model: string }
+interface LearnInfo { dataset_id: number; dataset_name: string; job_id: number; model: string; review?: boolean }
 
 export function AttachCard({ data, onCommand, onAsk }: { data: ChatCardData; onCommand: OnCommand; onAsk: (q: string) => void }) {
   const docs = (data.documents as { id: number; filename: string; size_bytes: number }[]) ?? []
@@ -137,7 +137,7 @@ function LearnBlock({ learn, onCommand }: { learn: LearnInfo; onCommand: OnComma
     <div className="space-y-1.5 rounded-xl border border-line/70 px-3 py-2.5">
       <div className="flex items-center gap-2 text-xs">
         <Brain className="h-3.5 w-3.5 text-warm" />
-        <span className="flex-1">Writing practice Q&amp;A with <code className="text-[11px] text-muted">{learn.model}</code></span>
+        <span className="flex-1">Writing practice Q&amp;A{learn.review ? ' for you to review' : ''} with <code className="text-[11px] text-muted">{learn.model}</code></span>
         <StatusChip status={status} />
       </div>
       {status && !isFinal(status) && (
@@ -146,7 +146,10 @@ function LearnBlock({ learn, onCommand }: { learn: LearnInfo; onCommand: OnComma
           <Bar tone="warm" value={live.progress && live.progress.total ? (live.progress.current + 0.3) / live.progress.total : 0.04} />
         </>
       )}
-      {status === 'done' && (
+      {status === 'done' && learn.review && live.job?.project_id != null && (
+        <ReviewBlock pid={live.job.project_id} datasetId={learn.dataset_id} onCommand={onCommand} />
+      )}
+      {status === 'done' && !learn.review && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>
             {pairs != null ? `${pairs} new pairs. ` : ''}“{learn.dataset_name}” now has <b className="text-text">{dataset?.row_count ?? '…'}</b> examples
@@ -156,6 +159,66 @@ function LearnBlock({ learn, onCommand }: { learn: LearnInfo; onCommand: OnComma
         </div>
       )}
       {status === 'failed' && <div className="text-xs text-bad">Learning failed. <Link className="underline" to={`/jobs/${learn.job_id}`}>See why</Link></div>}
+    </div>
+  )
+}
+
+/** Practice Q&A from a "Learn, after I check" drop: untick the wrong ones, keep the rest. */
+function ReviewBlock({ pid, datasetId, onCommand }: { pid: number; datasetId: number; onCommand: OnCommand }) {
+  const [rows, setRows] = useState<DatasetRow[] | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [off, setOff] = useState<Set<number>>(() => new Set())
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    // Once accepted or discarded the review dataset is gone, so a 404 means it was already decided.
+    api.datasetRows(pid, datasetId, { limit: 200 }).then((r) => setRows(r.rows)).catch(() => setDone('Reviewed.'))
+  }, [pid, datasetId])
+
+  const text = (r: DatasetRow, role: 'user' | 'assistant') => r.messages.find((m) => m.role === role)?.content ?? ''
+  const toggle = (i: number) => setOff((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n })
+  const decide = async (indexes: number[]) => {
+    setBusy(true)
+    try {
+      const r = await api.acceptReview(pid, datasetId, indexes)
+      setDone(r.accepted ? `Kept ${r.accepted} in “${r.dataset?.name}”${r.discarded ? `, left out ${r.discarded}` : ''}.` : 'Left them all out.')
+    } catch (e) {
+      setDone(e instanceof Error ? e.message.replace(/^\d+: /, '') : String(e))
+    }
+    setBusy(false)
+  }
+
+  if (done) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span>{done}</span>
+        {done.startsWith('Kept') && <Action onClick={() => onCommand('train')}><Play className="h-3 w-3" />Train on it</Action>}
+      </div>
+    )
+  }
+  if (!rows) return <Loader2 className="h-4 w-4 animate-spin text-muted" />
+  const keep = rows.filter((r) => !off.has(r.index)).map((r) => r.index)
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted">{rows.length} pairs. Untick any that are wrong; the rest join “Learned in chat”.</div>
+      <ul className="max-h-80 space-y-0.5 overflow-y-auto pr-1">
+        {rows.map((r) => (
+          <li key={r.index}>
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 text-xs hover:bg-panel-2">
+              <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={!off.has(r.index)} onChange={() => toggle(r.index)} />
+              <span className={off.has(r.index) ? 'opacity-45' : ''}>
+                <span className="block font-medium text-text">{text(r, 'user')}</span>
+                <span className="block text-muted">{text(r, 'assistant')}</span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        {keep.length > 0 && !busy && <Action onClick={() => decide(keep)}><Check className="h-3 w-3" />Keep {keep.length}</Action>}
+        {!busy && <Action onClick={() => decide([])}><X className="h-3 w-3" />Leave all out</Action>}
+        {busy && <Loader2 className="h-4 w-4 animate-spin text-muted" />}
+      </div>
     </div>
   )
 }

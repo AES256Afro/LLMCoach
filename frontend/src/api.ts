@@ -261,7 +261,7 @@ export interface Dataset {
   id: number
   project_id: number
   name: string
-  source: 'upload' | 'generated' | 'chat' | 'inbox'
+  source: 'upload' | 'generated' | 'chat' | 'inbox' | 'review' // review: practice Q&A waiting to be looked over
   status: 'generating' | 'ready' | 'failed'
   row_count: number
   splits: Record<Split, number> | null
@@ -444,6 +444,8 @@ export function errorDetail(detail: unknown): string | undefined {
 // ---- inbox, tokens and the learning loop --------------------------------------------------------
 
 export type SourceMode = 'remember' | 'learn'
+/** What a file dropped into a chat is for; review writes practice Q&A to look over before it's kept. */
+export type AttachMode = 'remember' | 'learn' | 'review'
 export type SourceScan = 'all' | 'secrets' | 'off'
 export type FileStatus = 'waiting' | 'added' | 'duplicate' | 'skipped' | 'quarantined' | 'rejected' | 'failed'
   | 'gone' | 'forgotten' // deleted from the folder: document kept | document removed too
@@ -681,6 +683,9 @@ export const api = {
     for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== '') p.set(k, String(v))
     return request<{ rows: DatasetRow[]; total: number }>(`/api/projects/${pid}/datasets/${id}/rows?${p}`)
   },
+  acceptReview: (pid: number, id: number, rows: number[]) =>
+    request<{ dataset: Dataset | null; accepted: number; discarded: number }>(`/api/projects/${pid}/datasets/${id}/accept`,
+      { method: 'POST', body: JSON.stringify({ rows }) }),
   resplit: (pid: number, id: number, val: number, test: number, seed = 42) =>
     request<Dataset>(`/api/projects/${pid}/datasets/${id}/split`, { method: 'POST', body: JSON.stringify({ val, test, seed }) }),
   deleteDataset: (pid: number, id: number) => request<void>(`/api/projects/${pid}/datasets/${id}`, { method: 'DELETE' }),
@@ -825,7 +830,7 @@ export async function uploadDataset(pid: number, file: File, name: string, val: 
 
 /** Files dropped (or text pasted) into a chat: remembered, or also learned from. */
 export function attachToChat(pid: number, opts: {
-  files: File[]; mode: 'remember' | 'learn'; text?: string; title?: string; conversationId?: number; model?: string
+  files: File[]; mode: AttachMode; text?: string; title?: string; conversationId?: number; model?: string
 }, onProgress: (fraction: number) => void = () => {}): Promise<AttachResult> {
   return new Promise((resolve, reject) => {
     const form = new FormData()

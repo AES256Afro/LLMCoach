@@ -95,7 +95,7 @@ export function buildGraph(g: PipelineGraph): { nodes: Node<CardData>[]; edges: 
       main: `${ds.rows} examples`, rest: s ? `${s.train} train · ${s.val} val · ${s.test} test` : ds.status,
       status: ds.status === 'generating' || running('generate', 'dataset_id', ds.id) ? 'run' : ds.status === 'failed' ? 'bad' : 'ok',
     })
-    const label = { generated: 'generate', chat: 'learn · chat', inbox: 'learn · inbox', upload: undefined }[ds.source]
+    const label = { generated: 'generate', chat: 'learn · chat', inbox: 'learn · inbox', review: 'to review', upload: undefined }[ds.source]
     if (ds.source !== 'upload') edge('kb', `ds-${ds.id}`, label)
   })
 

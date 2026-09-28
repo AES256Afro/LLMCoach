@@ -80,6 +80,30 @@ def test_private_looking_files_are_held_back(client):
     wait_final(client, free["job"]["id"])
 
 
+def test_review_drop_waits_for_the_owner(client, fake):
+    pid = client.post("/api/projects", json={"name": "studio-review"}).json()["id"]
+    r = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "review", "model": "ollama/chatty:1b"},
+                    files=[("files", ("manual.md", io.BytesIO(_text(4, "Manual")), "text/markdown"))])
+    out = r.json()
+    learn = out["message"]["data"]["learn"]
+    assert learn["review"] is True and learn["dataset_name"] == "To review: manual.md"
+    assert out["conversation"]["title"] == "Added 1 file; writing practice Q&A for you to review"
+    wait_final(client, out["message"]["data"]["ingest_job_id"])
+    assert wait_final(client, learn["job_id"])["status"] == "done"
+    staged = client.get(f"/api/projects/{pid}/datasets/{learn['dataset_id']}").json()
+    assert staged["source"] == "review" and staged["row_count"] >= 3
+    datasets = client.get(f"/api/projects/{pid}/datasets").json()
+    assert not any(d["source"] == "chat" for d in datasets)  # nothing joined "Learned in chat" yet
+
+    acc = client.post(f"/api/projects/{pid}/datasets/{learn['dataset_id']}/accept", json={"rows": [0, 2, 2, 99]}).json()
+    assert acc["accepted"] == 2 and acc["discarded"] == staged["row_count"] - 2
+    assert acc["dataset"]["name"] == "Learned in chat" and acc["dataset"]["row_count"] == 2
+    assert sum(acc["dataset"]["splits"].values()) == 2
+    assert client.get(f"/api/projects/{pid}/datasets/{learn['dataset_id']}").status_code == 404
+    # Only review datasets can be accepted.
+    assert client.post(f"/api/projects/{pid}/datasets/{acc['dataset']['id']}/accept", json={"rows": [0]}).status_code == 409
+
+
 def test_learn_drop_appends_and_keeps_splits(client, fake):
     pid = client.post("/api/projects", json={"name": "studio-learn"}).json()["id"]
     first = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},

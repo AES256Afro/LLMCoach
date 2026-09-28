@@ -2,9 +2,9 @@ import '@fontsource-variable/geist'
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  BookOpen, Brain, Library, LogOut, Menu, MessagesSquare, PanelRight, Plus, Search, SlidersHorizontal, Trash2, X,
+  BookOpen, Brain, Library, ListChecks, LogOut, Menu, MessagesSquare, PanelRight, Plus, Search, SlidersHorizontal, Trash2, X,
 } from 'lucide-react'
-import { api } from '../../api'
+import { api, type AttachMode } from '../../api'
 import { useAuth } from '../../components/AuthGate'
 import { ProjectSwitcher } from '../../components/ProjectSwitcher'
 import { useProject } from '../../hooks/project'
@@ -95,7 +95,7 @@ export default function ChatStudio() {
     runCommand(ctx, name, args).finally(() => setRefreshKey((k) => k + 1))
   }, [project, session, chatModel, kbChunks, pickFiles, navigate])
 
-  const attach = useCallback((files: File[], mode: 'remember' | 'learn', question = '') => {
+  const attach = useCallback((files: File[], mode: AttachMode, question = '') => {
     session.attach(files, mode, question).finally(() => setRefreshKey((k) => k + 1))
   }, [session])
 
@@ -112,7 +112,7 @@ export default function ChatStudio() {
     dragDepth.current = Math.max(0, dragDepth.current - 1)
     if (!dragDepth.current) setDragging(false)
   }
-  const dropTo = (mode: 'remember' | 'learn' | 'stage') => (e: DragEvent) => {
+  const dropTo = (mode: AttachMode | 'stage') => (e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     dragDepth.current = 0
@@ -291,7 +291,7 @@ export default function ChatStudio() {
         <div className="absolute inset-0 z-50 grid place-items-center bg-[#1a1917]/85 p-6 backdrop-blur-sm" onDrop={dropTo('stage')}>
           <div className="w-full max-w-2xl space-y-4 text-center">
             <p className="text-sm text-muted">Drop onto what {project.name} should do with it</p>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div onDragOver={(e) => e.preventDefault()} onDrop={dropTo('remember')}
                    className="rounded-3xl border-2 border-dashed border-accent/60 bg-accent-dim/60 px-6 py-10 transition hover:bg-accent-dim">
                 <BookOpen className="mx-auto mb-3 h-8 w-8 text-accent" />
@@ -303,6 +303,12 @@ export default function ChatStudio() {
                 <Brain className="mx-auto mb-3 h-8 w-8 text-warm" />
                 <b className="block text-lg font-semibold">Learn from it</b>
                 <span className="text-sm text-muted">Also write practice Q&amp;A, ready to fine-tune a model with /train.</span>
+              </div>
+              <div onDragOver={(e) => e.preventDefault()} onDrop={dropTo('review')}
+                   className="rounded-3xl border-2 border-dashed border-line bg-panel-2/60 px-6 py-10 transition hover:bg-panel-2">
+                <ListChecks className="mx-auto mb-3 h-8 w-8 text-text" />
+                <b className="block text-lg font-semibold">Review first</b>
+                <span className="text-sm text-muted">Write practice Q&amp;A for you to look over; only what you keep is learned.</span>
               </div>
             </div>
             <p className="text-xs text-muted">Drop anywhere else to attach it to your next message.</p>

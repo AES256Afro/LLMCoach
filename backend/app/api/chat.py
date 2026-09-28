@@ -143,12 +143,13 @@ async def attach(project_id: int, mode: str = Form("remember"), conversation_id:
 
     remember: add to the knowledge base, so answers can cite them within a minute.
     learn:    also write Q&A pairs from them into the "Learned in chat" dataset, for fine-tuning.
+    review:   write the Q&A pairs into a dataset of their own, to look over before they join it.
     Files that look like they contain secrets or personal data are stored but held back from both
     until the owner decides (check=False skips that). Returns the event card added to the
     conversation (created if needed)."""
     project = get_project_or_404(session, project_id)
-    if mode not in ("remember", "learn"):
-        raise HTTPException(400, "mode must be 'remember' or 'learn'")
+    if mode not in ("remember", "learn", "review"):
+        raise HTTPException(400, "mode must be 'remember', 'learn' or 'review'")
     items = [(f.filename or "file", await f.read(MAX_FILE_BYTES + 1)) for f in files or []]
     if text.strip():
         name = (title.strip() or f"Note {utcnow():%Y-%m-%d %H%M}")[:80]
@@ -170,14 +171,19 @@ async def attach(project_id: int, mode: str = Form("remember"), conversation_id:
     # Learning also covers files that were already in the knowledge base.
     learn_ids = [d.id for d in ready] + [s["doc_id"] for s in skipped if s.get("doc_id")]
     learn = None
-    if mode == "learn" and learn_ids:
+    if mode in ("learn", "review") and learn_ids:
         cfg = project.effective_settings()
         model_ref = model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+        names = [d.filename for d in ready] + [s["filename"] for s in skipped if s.get("doc_id")]
+        label = (names[0] if len(names) == 1 else f"{len(names)} files") if mode == "review" else None
         dataset, job = learn_into_chat_dataset(session, project, model_ref, learn_ids,
-                                               max_chunks=min(40, 8 * len(learn_ids)))
-        learn = {"dataset_id": dataset.id, "dataset_name": dataset.name, "job_id": job.id, "model": model_ref}
+                                               max_chunks=min(40, 8 * len(learn_ids)), review=label)
+        learn = {"dataset_id": dataset.id, "dataset_name": dataset.name, "job_id": job.id, "model": model_ref,
+                 "review": mode == "review"}
 
-    if ready and learn:
+    if ready and learn and mode == "review":
+        summary = f"Added {_files_phrase(len(ready))}; writing practice Q&A for you to review"
+    elif ready and learn:
         summary = f"Added {_files_phrase(len(ready))} to the knowledge base and started learning from them"
     elif ready:
         summary = f"Added {_files_phrase(len(ready))} to the knowledge base"
