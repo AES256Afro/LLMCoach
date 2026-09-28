@@ -23,6 +23,16 @@ def test_system_stats(client):
     assert s["ram_total_gb"] > 0
 
 
+def test_system_stream_sends_recent_history_first(client):
+    with client.websocket_connect("/ws/system") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "history"
+        assert ws.receive_json()["type"] == "stats"  # recorded as it's sent
+    with client.websocket_connect("/ws/system") as ws:
+        samples = ws.receive_json()["samples"]
+        assert samples and {"t", "cpu", "ram", "gpuUtil", "vram"} <= set(samples[-1])
+
+
 def test_projects_crud(client):
     r = client.post("/api/projects", json={"name": "support-bot"})
     assert r.status_code == 201
