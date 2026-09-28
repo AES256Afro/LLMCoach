@@ -12,14 +12,14 @@ repo. What LLMCoach needs from it is listed there (section 6) and at the end of 
 
 | | Milestone | State |
 |---|---|---|
-| L0 | Studio framework | ✅ 0.3.0: registry, switcher that remembers the choice (`llmcoach.studio` in localStorage), lazy-loaded studio bundles, CSS-scope theming. **Not yet:** switching keeps you on the same document or run (it keeps the project only). |
+| L0 | Studio framework | ✅ 0.3.0, finished in 0.7.0: registry, switcher that remembers the choice (`llmcoach.studio` in localStorage), lazy-loaded studio bundles, CSS-scope theming, and **switching keeps you on the same thing**: studios pass a `StudioContext` (conversation, fine-tune, evaluation, dataset, document) and `studioLink()` maps it to each studio's deep link (`/chat/1`, `/workbench?open=finetune:3`, `/notebook/report/2`, `/canvas?node=ds-1`, `?c=1` for the chat-based ones). |
 | L1 | Just the Chat, with drag-and-drop learning | ✅ 0.3.0: drop onto Remember / Learn, cited answers with a context rail, `/train /compare /learn /logs /model /kb /help /classic` as live cards. **Not yet:** a "Review" drop target (look at generated Q&A before it joins the dataset). |
 | L2 | Inbox and learning loop | ✅ 0.4.0 for the core, see below. |
 | L3 | Pipeline Canvas | ✅ 0.6.0 at `/canvas`: the project drawn from its real objects (folders → documents → knowledge base → chat and datasets → fine-tunes → evaluations, with the learning loop as a gate), React Flow (MIT), drag to rearrange (remembered per project), a drawer per node, blue lineage for the selected node, and **Run pipeline**: looks at every folder (the ledger skips files it has seen), waits for indexing and Q&A, then retrains only if the data or the training settings changed. Phones get a list of cards. **Not yet:** drawing new connections by hand (steps are added from the drawers and the Add step menu), and schedules as their own nodes. |
 | L4 | Mission Control | ✅ 0.5.0 at `/console`: F1–F9 views of live tiles, a read-only wall view (F9 / W) that follows the running job, earlier runs overlaid on the loss chart, GPU temperature and power in the header, a readable-contrast setting (C), and ntfy alerts (F8) for finished and failed jobs, loop decisions and held files. **Not yet:** a GPU history chart (power and temperature over time); the header only shows the current values. |
-| L5 | Workbench | Not started. Explorer tree, tabs and split panes, Ctrl K to every command, docked logs, run settings as code with diffs. |
-| L6 | Field Notebook | Not started. Guided four steps, margin citations, a report builder with export, findings written from evaluation results. |
-| L7 | Friendly Studio | Not started. Recipes and wizards, plain-language results, a shared "what to try next" service. |
+| L5 | Workbench | ✅ 0.7.0 at `/workbench`: an explorer tree of the project's real objects, tabs (chats, documents, datasets, fine-tunes, evaluations, jobs) remembered per project, an inspector for sources, logs docked below (Ctrl \`), a status bar, and Ctrl K reaching every object, command, studio and Classic page. Run settings as code: a new fine-tune is editable JSON with a dry run, and any run's config can be diffed against another's. `?open=finetune:3` deep-links a tab. **Not yet:** true split panes (two tabs side by side). |
+| L6 | Field Notebook | ✅ 0.7.0 at `/notebook`: a four-step stepper (Documents → Dataset → Train → Evaluate) with "Ask your bot" set apart; answers as serif prose with the cited sentences highlighted and the quoted passages in the margin; each evaluation as a report with a headline finding written from the scores, a table, notes on how far to trust it, the fine-tune's loss figure and example answers, which copies as Markdown, downloads, or prints. The wording comes from `studios/findings.ts`, shared with the Friendly Studio. |
+| L7 | Friendly Studio | ✅ 0.7.0 at `/friendly`: Home, Chat, Knowledge, Train and Results as big rounded cards; results as one sentence ("Your documents made answers 34% more accurate.") with a card per version (judge or accuracy ring, accuracy and speed bars); three recipes; one-button practice questions, teaching and testing with sensible defaults; and "What to try next" from `studios/recommend.ts`, which any studio can use. The word LoRA never appears. **Not yet:** the other studios don't show the recommendations yet. |
 | L8 | Accounts and sharing | Not started. Owner / trainer / viewer roles, a default studio per person, an audit log. Move it up if other people start using LLMCoach. |
 
 ## L2 in detail
@@ -48,11 +48,16 @@ in Classic and an Inbox section in the Chat studio's context rail):
 Still to do for L2:
 
 - **Buckets** (MinIO / S3 prefixes) as a source kind, polled like folders.
-- **Export the promoted adapter to Ollama** (merge + GGUF, or Ollama's safetensors adapter import where
-  the architecture allows) so the chat can use it. Until then "promoted" means "the current best",
-  used as the loop's baseline and shown in the registry.
 - Deleted files in a watched folder leave their documents in place; offer "remove documents whose
   files are gone".
+
+Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):
+the adapter is merged into its base model, the safetensors and the base model's original tokenizer
+files are uploaded to the Ollama server as blobs, and Ollama builds the model with `/api/create`,
+quantized (q8_0 by default) and with a message template for the family (ChatML, Llama 3, Gemma).
+It then works in every chat as `ollama/llmcoach-<project>-ft<id>`. Two traps, both handled: tokenizer
+files re-saved by transformers 5 use a layout Ollama's converter misreads (the model answers in
+question marks), and Ollama doesn't always recognise the chat format on its own.
 
 Fixed along the way (0.6.0): a learn run that found nothing to learn from used to empty the dataset
 it appends to; now it keeps what was there. An indexing job cut short by a restart (an app update)
@@ -69,4 +74,4 @@ now starts again instead of failing.
 
 Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmcoach:X.Y.Z` → bump
 `catalog/llmcoach.yaml` in BoxPilot → release BoxPilot. Released: 0.3.0 (Chat studio), 0.4.0 (inbox and learning loop),
-0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas). BoxPilot PR #267 carries the catalog bump and the inbox volume.
+0.5.0 (Mission Control and alerts), 0.6.0 (Pipeline Canvas), 0.7.0 (Field Notebook). BoxPilot PR #267 carries the catalog bump and the inbox volume.

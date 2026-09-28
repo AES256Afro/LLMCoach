@@ -9,6 +9,9 @@ LLMCoach has **studios**: different front ends over the same projects, for peopl
 - **Chat** (the default): a chat that learns. Drop files anywhere onto *Remember* or *Learn*, ask with cited answers, and run `/train`, `/compare` or `/logs` without leaving the conversation.
 - **Mission Control** (`/console`): an amber terminal of live tiles for watching runs, F1–F9 to switch views, a wall view for a second monitor, and phone alerts through ntfy when runs finish.
 - **Pipeline Canvas** (`/canvas`): the project drawn as a flow from folders to evaluations. Click any step to work on it in a drawer, and press *Run pipeline* to redo only what changed.
+- **Field Notebook** (`/notebook`): a calm, light studio in four steps. Answers read as prose with their sources quoted in the margin, and every evaluation becomes a short written report you can copy, download or print.
+- **Friendly Studio** (`/friendly`): rounded, colourful and plain-spoken, for people new to all this. Results come as one sentence, every step is one button, and "What to try next" says what would help most.
+- **Workbench** (`/workbench`): an IDE for small models. An explorer of documents, datasets, runs and chats, tabs, docked logs, run settings as code with diffs, and Ctrl K to reach anything.
 - **Classic**: every page and setting in one dashboard (below).
 
 ## What it does
@@ -23,6 +26,7 @@ The typical loop: put your documents in the **Knowledge Base**, chat with them i
 | **Train** | LoRA / QLoRA fine-tuning with Quick/Balanced/Thorough presets and a **memory estimate against your hardware** before launch, plus live loss, eval-loss and learning-rate charts. It uses **Unsloth** on an NVIDIA GPU and **TRL + PEFT** elsewhere (CPU included, for models under 1B). |
 | **Compare** | Run a test split through up to six variants: models, fine-tunes, each with or without the knowledge base. Scores are exact match, F1 and ROUGE-L, plus an optional **LLM judge** (1–5 with reasons), shown side by side with overlap highlighting. |
 | **Inbox** | Watched folders: files copied into a folder (or a share on the network) join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
+| **Export** | Send a fine-tune to Ollama with one button (Workbench, Canvas, or *Use in chat* in the Friendly Studio): it's merged, quantized and built on the Ollama server, then works in every chat like any other model. A 0.5B fine-tune answers several times faster than an 8B model. |
 | **Providers** | Ollama (default) plus any OpenAI-compatible server, with presets for **llama.cpp, vLLM, SGLang, LocalAI and Text Embeddings Inference**. Models are named `provider/model`, so tasks can mix them. |
 | **Jobs / Logs** | Everything heavy runs as a queued job in its own process, with live logs, progress, charts and cancel. |
 
@@ -42,6 +46,9 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0 (buckets and export to Ollama still to come) |
 | L3 | Pipeline Canvas: the project as an editable flow, Run pipeline | ✅ 0.6.0 |
 | L4 | Mission Control studio and ntfy alerts | ✅ 0.5.0 |
+| L5 | Workbench: explorer, tabs, docked logs, settings as code, Ctrl K to everything | ✅ 0.7.0 |
+| L6 | Field Notebook: guided steps, margin citations, evaluation reports | ✅ 0.7.0 |
+| L7 | Friendly Studio and the shared "what to try next" service | ✅ 0.7.0 |
 
 ## Local development
 

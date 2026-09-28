@@ -38,6 +38,10 @@ export default function ChatStudio() {
   const pid = project?.id
 
   useEffect(() => rememberStudio('chat'), [])
+  useEffect(() => {
+    const model = new URLSearchParams(window.location.search).get('model')
+    if (model) setSettings((s) => ({ ...s, model }))
+  }, [setSettings])
 
   // ---- URL <-> conversation ------------------------------------------------------------------
   const params = useParams()
@@ -186,7 +190,7 @@ export default function ChatStudio() {
 
       {/* nav rail */}
       <nav className="hidden w-14 shrink-0 flex-col items-center gap-1.5 border-r border-line py-3.5 md:flex" aria-label="Chat studio">
-        <StudioSwitcher current="chat" className="mb-2">
+        <StudioSwitcher current="chat" className="mb-2" context={{ conversation: active?.id }}>
           <span className="grid h-[30px] w-[30px] place-items-center rounded-[9px] bg-accent text-[13px] font-bold text-bg">LC</span>
         </StudioSwitcher>
         {railButton('New chat', <Plus className="h-[18px] w-[18px]" />, () => { session.newChat(); setFocusKey((k) => k + 1) })}
@@ -204,7 +208,7 @@ export default function ChatStudio() {
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[52px] shrink-0 items-center gap-2 px-3 md:px-5">
           <button type="button" onClick={() => setHistoryOpen(true)} className="grid h-9 w-9 place-items-center rounded-lg text-muted md:hidden" aria-label="Chats"><Menu className="h-5 w-5" /></button>
-          <StudioSwitcher current="chat" className="md:hidden">
+          <StudioSwitcher current="chat" className="md:hidden" context={{ conversation: active?.id }}>
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-[12px] font-bold text-bg">LC</span>
           </StudioSwitcher>
           <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">

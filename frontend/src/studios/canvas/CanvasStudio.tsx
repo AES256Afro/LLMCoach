@@ -10,7 +10,7 @@ import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
 import { useSystemStream } from '../../hooks/streams'
 import { StudioSwitcher } from '../StudioSwitcher'
-import { rememberStudio } from '../registry'
+import { rememberStudio, type StudioContext } from '../registry'
 import { Drawer, JobLog } from './Drawer'
 import { buildGraph, COLOR, lineage, type CardData } from './graph'
 import { CardBody, NodeCard } from './NodeCard'
@@ -24,6 +24,16 @@ function loadPositions(pid: number | undefined): Pos {
 }
 function savePositions(pid: number, pos: Pos) {
   try { localStorage.setItem(`llmcoach.canvas.${pid}`, JSON.stringify(pos)) } catch { /* private window */ }
+}
+
+/** The selected node as something other studios can open. */
+function selectionContext(id: string | null, g: PipelineGraph): StudioContext {
+  const n = Number(id?.split('-')[1])
+  if (id?.startsWith('ft-')) return { finetune: n }
+  if (id?.startsWith('ev-')) return { evaluation: n }
+  if (id?.startsWith('ds-')) return { dataset: n }
+  if (id === 'chat') return { conversation: g.chat.last_id }
+  return {}
 }
 
 function useNarrow() {
@@ -134,7 +144,7 @@ export default function CanvasStudio() {
   return (
     <div className="studio-canvas flex h-full flex-col">
       <header className="cv-top">
-        <StudioSwitcher current="canvas"><span className="cv-logo cursor-pointer"><i />LLMCoach</span></StudioSwitcher>
+        <StudioSwitcher current="canvas" context={selectionContext(selectedId, g)}><span className="cv-logo cursor-pointer"><i />LLMCoach</span></StudioSwitcher>
         <label className="relative flex items-center gap-1.5 font-semibold text-[var(--mu)]">
           /
           <select aria-label="Project" value={project.id} onChange={(e) => select(Number(e.target.value))}

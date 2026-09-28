@@ -37,6 +37,7 @@ WORKERS: dict[str, str] = {
     "generate": "app.workers.generate",
     "train": "app.workers.train",
     "evaluate": "app.workers.evaluate",
+    "export": "app.workers.export",
 }
 
 # Kinds that redo cleanly from the start, so a restart mid-job requeues them instead of failing

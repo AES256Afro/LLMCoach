@@ -1,3 +1,4 @@
+import re
 import shutil
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -117,6 +118,38 @@ def delete_finetune(project_id: int, ft_id: int, session: Session = Depends(get_
     shutil.rmtree(settings.data_dir / "finetunes" / str(ft.id), ignore_errors=True)
     session.delete(ft)
     session.commit()
+
+
+class ExportBody(BaseModel):
+    name: str | None = None
+    quantize: str | None = "q8_0"  # "q8_0" | "q4_K_M" | None (keep 16-bit)
+
+
+QUANTIZE = (None, "q8_0", "q4_K_M")
+
+
+def ollama_name(project_name: str, ft: FineTune) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", project_name.lower()).strip("-")[:30] or "project"
+    return f"llmcoach-{slug}-ft{ft.id}"
+
+
+@router.post("/api/projects/{project_id}/finetunes/{ft_id}/export", status_code=201)
+def export_finetune(project_id: int, ft_id: int, body: ExportBody, session: Session = Depends(get_session)) -> dict:
+    """Merges the adapter into its base model and builds it as a model on the Ollama server."""
+    project = get_project_or_404(session, project_id)
+    ft = get_finetune(project_id, ft_id, session)
+    if ft.status != FineTuneStatus.ready or not ft.output_dir:
+        raise HTTPException(409, "only a finished fine-tune can be exported")
+    if not (settings.data_dir / ft.output_dir / "adapter_config.json").exists():
+        raise HTTPException(409, "this fine-tune's adapter files are missing")
+    if body.quantize not in QUANTIZE:
+        raise HTTPException(400, "quantize must be q8_0, q4_K_M, or null to keep 16-bit weights")
+    name = (body.name or ollama_name(project.name, ft)).strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}(:[a-z0-9._-]{1,32})?", name):
+        raise HTTPException(400, "the model name may use lowercase letters, digits, '.', '_' and '-'")
+    job = manager.submit(session, "export", {"finetune_id": ft.id, "name": name, "quantize": body.quantize, "provider": "ollama"},
+                         project_id=project_id)
+    return {"job": job, "model": f"ollama/{name}"}
 
 
 def delete_project_finetunes(session: Session, project_id: int) -> None:

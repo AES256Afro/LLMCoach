@@ -22,6 +22,9 @@ import { preferredStudio } from './studios/registry'
 const ChatStudio = lazy(() => import('./studios/chat/ChatStudio'))
 const MissionStudio = lazy(() => import('./studios/mission/MissionStudio'))
 const CanvasStudio = lazy(() => import('./studios/canvas/CanvasStudio'))
+const NotebookStudio = lazy(() => import('./studios/notebook/NotebookStudio'))
+const FriendlyStudio = lazy(() => import('./studios/friendly/FriendlyStudio'))
+const WorkbenchStudio = lazy(() => import('./studios/workbench/WorkbenchStudio'))
 
 function StudioLoading() {
   return <div className="grid h-full place-items-center text-sm text-muted">Loading studio…</div>
@@ -39,6 +42,12 @@ const router = createBrowserRouter([
   { path: '/console', element: <Suspense fallback={<StudioLoading />}><MissionStudio /></Suspense> },
   { path: '/console/:view', element: <Suspense fallback={<StudioLoading />}><MissionStudio /></Suspense> },
   { path: '/canvas', element: <Suspense fallback={<StudioLoading />}><CanvasStudio /></Suspense> },
+  { path: '/notebook', element: <Suspense fallback={<StudioLoading />}><NotebookStudio /></Suspense> },
+  { path: '/notebook/report/:evalId', element: <Suspense fallback={<StudioLoading />}><NotebookStudio /></Suspense> },
+  { path: '/notebook/:step', element: <Suspense fallback={<StudioLoading />}><NotebookStudio /></Suspense> },
+  { path: '/friendly', element: <Suspense fallback={<StudioLoading />}><FriendlyStudio /></Suspense> },
+  { path: '/friendly/:page', element: <Suspense fallback={<StudioLoading />}><FriendlyStudio /></Suspense> },
+  { path: '/workbench', element: <Suspense fallback={<StudioLoading />}><WorkbenchStudio /></Suspense> },
   {
     element: <Layout />,
     children: [
