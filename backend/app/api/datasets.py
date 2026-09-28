@@ -132,17 +132,26 @@ CHAT_DATASET = "Learned in chat"
 
 INBOX_DATASET = "Learned from the inbox"
 LEARNED_DATASETS = {"chat": CHAT_DATASET, "inbox": INBOX_DATASET}
+REVIEW_SOURCE = "review"  # practice Q&A waiting to be looked over before it joins "Learned in chat"
 
 
 def learn_into_chat_dataset(session: Session, project, model_ref: str, doc_ids: list[int] | None,
-                            max_chunks: int = 12, source: str = "chat") -> tuple[Dataset, Job]:
+                            max_chunks: int = 12, source: str = "chat", review: str | None = None) -> tuple[Dataset, Job]:
     """Queues Q&A generation into one of the project's learned datasets, appending to it:
     "Learned in chat" for the chat studio's drops, "Learned from the inbox" for watched folders.
+    With `review` (a label, such as the file names), the pairs go to a new dataset of their own
+    instead, to be looked over and then accepted into "Learned in chat" (see accept_review).
 
     The generation job queues behind the ingest job for the same documents (one job runs at a
     time), so their passages exist by the time it runs."""
-    d = session.exec(select(Dataset).where(Dataset.project_id == project.id, Dataset.source == source)).first()
-    if d is None:
+    d = None if review is not None else session.exec(
+        select(Dataset).where(Dataset.project_id == project.id, Dataset.source == source)).first()
+    if review is not None:
+        d = Dataset(project_id=project.id, name=f"To review: {review}"[:120], source=REVIEW_SOURCE, status=DatasetStatus.ready)
+        session.add(d)
+        session.commit()
+        session.refresh(d)
+    elif d is None:
         d = Dataset(project_id=project.id, name=LEARNED_DATASETS[source], source=source, status=DatasetStatus.ready)
         session.add(d)
         session.commit()
@@ -162,6 +171,45 @@ def learn_into_chat_dataset(session: Session, project, model_ref: str, doc_ids: 
     session.refresh(d)
     session.refresh(job)
     return d, job
+
+
+class Accept(BaseModel):
+    rows: list[int]  # indexes into the review dataset's rows
+
+
+@router.post("/{dataset_id}/accept")
+def accept_review(project_id: int, dataset_id: int, body: Accept, session: Session = Depends(get_session)) -> dict:
+    """Moves the chosen pairs of a dataset waiting for review into "Learned in chat" (they get
+    splits there like any appended rows) and deletes the review dataset with the rest."""
+    d = _get(session, project_id, dataset_id)
+    if d.source != REVIEW_SOURCE:
+        raise HTTPException(409, "only practice Q&A waiting for review can be accepted")
+    if d.status == DatasetStatus.generating:
+        raise HTTPException(409, "its questions are still being written")
+    rows = ds.read_rows(ds.dataset_path(project_id, d.id)) if d.path else []
+    chosen = [{k: v for k, v in rows[i].items() if k != "split"} for i in sorted(set(body.rows)) if 0 <= i < len(rows)]
+    target = session.exec(select(Dataset).where(Dataset.project_id == project_id, Dataset.source == "chat")).first()
+    if target is None and chosen:
+        target = Dataset(project_id=project_id, name=CHAT_DATASET, source="chat", status=DatasetStatus.ready)
+        session.add(target)
+        session.commit()
+        session.refresh(target)
+    if target is not None and chosen:
+        if target.status == DatasetStatus.generating:
+            raise HTTPException(409, f"“{target.name}” is being written to right now; accept these when that job finishes")
+        path = ds.dataset_path(project_id, target.id)
+        merged = (ds.read_rows(path) if path.exists() else []) + chosen
+        target.splits = ds.assign_new_splits(merged)
+        ds.write_rows(path, merged)
+        target.path = str(path.relative_to(settings.data_dir))
+        target.row_count, target.stats, target.status = len(merged), ds.compute_stats(merged), DatasetStatus.ready
+        session.add(target)
+    ds.dataset_path(project_id, d.id).unlink(missing_ok=True)
+    session.delete(d)
+    session.commit()
+    if target is not None:
+        session.refresh(target)
+    return {"dataset": target, "accepted": len(chosen), "discarded": len(rows) - len(chosen)}
 
 
 @router.get("/{dataset_id}")

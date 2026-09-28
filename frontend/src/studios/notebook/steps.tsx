@@ -69,7 +69,9 @@ export function DocumentsStep({ g, changed }: { g: PipelineGraph; changed: () =>
     setProgress(0)
     try {
       const r = await uploadDocuments(pid, files, setProgress)
-      setSaid(`Added ${r.documents.length} document${r.documents.length === 1 ? '' : 's'}${r.skipped.length ? `; ${r.skipped.length} skipped (${r.skipped.map((s) => s.reason).join(', ')})` : ''}. They're being read now.`)
+      const n = r.documents.length - r.held.length
+      setSaid(`Added ${n} document${n === 1 ? '' : 's'}${r.skipped.length ? `; ${r.skipped.length} skipped (${r.skipped.map((s) => s.reason).join(', ')})` : ''}. They're being read now.`
+        + (r.held.length ? ` Held back ${r.held.map((h) => h.filename).join(', ')}: ${r.held.length === 1 ? 'it looks' : 'they look'} private. Index or remove ${r.held.length === 1 ? 'it' : 'them'} on the Knowledge page.` : ''))
     } catch (e) { setSaid(err(e)) }
     setProgress(null)
     reload()

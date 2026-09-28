@@ -78,6 +78,7 @@ class DocStatus(str, Enum):
     ingesting = "ingesting"
     ready = "ready"
     failed = "failed"
+    held = "held"  # stored but not indexed: looks like it holds secrets or personal data
 
 
 class Document(SQLModel, table=True):
@@ -222,16 +223,28 @@ class Setting(SQLModel, table=True):
 class Source(SQLModel, table=True):
     """A folder LLMCoach watches ("an inbox"): files that land in it join the knowledge base.
 
-    `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk."""
+    `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk.
+    A "bucket" source reads an S3-compatible bucket instead (MinIO, AWS, R2...): its objects are
+    mirrored into data/buckets/<id> and from there handled exactly like a folder's files."""
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     name: str
-    folder: str  # relative to inbox_dir; "." is the root itself
+    kind: str = "folder"  # "folder" | "bucket"
+    folder: str  # relative to inbox_dir; "." is the root itself; "" for a bucket
+    endpoint: str | None = None  # bucket sources: http(s)://host:port
+    bucket: str | None = None
+    prefix: str | None = None  # only keys under this are read, e.g. "team/notes/"
+    region: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None  # never returned by the API
     mode: str = "remember"  # "remember" (index) | "learn" (index, then write practice Q&A)
     scan: str = "all"  # "all" (secrets and personal data) | "secrets" | "off"
     enabled: bool = True
     poll_seconds: int = 60
+    # When a file is deleted from the folder, remove its document from the knowledge base too.
+    # Off by default: many people use the folder as a drop box and clear it once files are in.
+    mirror_deletes: bool = False
     last_scan_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -241,7 +254,8 @@ class SourceFile(SQLModel, table=True):
     """One file a source has seen: the inbox's ledger.
 
     status: waiting (still being copied, or not looked at yet) | added | duplicate | skipped |
-    quarantined (held for review) | rejected | failed."""
+    quarantined (held for review) | rejected | failed | gone (deleted from the folder, its document
+    kept) | forgotten (deleted from the folder, and its document with it)."""
 
     id: int | None = Field(default=None, primary_key=True)
     source_id: int = Field(foreign_key="source.id", index=True)
@@ -257,6 +271,7 @@ class SourceFile(SQLModel, table=True):
     first_seen_at: datetime = Field(default_factory=utcnow)
     processed_at: datetime | None = None
     reviewed_at: datetime | None = None
+    missing_at: datetime | None = None  # first look that didn't find the file
 
 
 class ApiToken(SQLModel, table=True):
@@ -292,6 +307,9 @@ class LearningLoop(SQLModel, table=True):
     # A "Run pipeline" is waiting for indexing and practice-Q&A jobs to finish before it trains.
     pending_run: bool = False
     last_config: str | None = None  # "<base model>|<preset>" of the last completed run
+    # After each promotion, rebuild ollama/llmcoach-<project>-current from the promoted adapter, so
+    # a chat pointed at that name always gets the best version without anyone switching models.
+    export_on_promote: bool = False
 
 
 class LoopRun(SQLModel, table=True):

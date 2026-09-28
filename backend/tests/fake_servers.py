@@ -102,12 +102,82 @@ def fake_app() -> FastAPI:
     return app
 
 
+def fake_s3_app(access_key: str, secret_key: str) -> FastAPI:
+    """A path-style S3 stand-in: ListObjectsV2 (two keys a page, to exercise continuation) and
+    GetObject, refusing any request whose SigV4 signature doesn't check out."""
+    from datetime import UTC, datetime
+    from email.utils import formatdate
+    from urllib.parse import parse_qsl
+    from xml.sax.saxutils import escape
+
+    from fastapi.responses import Response
+
+    from app.services.s3 import sign
+
+    app = FastAPI()
+    app.state.buckets = {}  # bucket -> {key: (bytes, unix mtime)}
+    app.state.requests = []
+
+    def error(status: int, code: str, message: str) -> Response:
+        body = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>{code}</Code><Message>{message}</Message></Error>"
+        return Response(body, status_code=status, media_type="application/xml")
+
+    def verified(request: Request) -> bool:
+        raw_path = request.scope["raw_path"].decode()
+        params = parse_qsl(request.scope["query_string"].decode(), keep_blank_values=True)
+        stamp = request.headers.get("x-amz-date", "")
+        try:
+            now = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            return False
+        region = request.headers.get("authorization", "").split("/")[2] if "/" in request.headers.get("authorization", "") else ""
+        want = sign(request.method, request.headers["host"], raw_path, params, access_key, secret_key, region, now)
+        app.state.requests.append((raw_path, dict(params)))
+        return request.headers.get("authorization") == want["authorization"]
+
+    @app.get("/{bucket}")
+    def list_objects(bucket: str, request: Request):
+        if not verified(request):
+            return error(403, "SignatureDoesNotMatch", "The request signature we calculated does not match.")
+        if bucket not in app.state.buckets:
+            return error(404, "NoSuchBucket", "The specified bucket does not exist")
+        q = request.query_params
+        prefix = q.get("prefix", "")
+        keys = sorted(k for k in app.state.buckets[bucket] if k.startswith(prefix))
+        start = int(q.get("continuation-token") or 0)
+        page = keys[start:start + min(int(q.get("max-keys") or 2), 2)]
+        more = start + len(page) < len(keys)
+        items = "".join(
+            f"<Contents><Key>{escape(k)}</Key><LastModified>"
+            f"{datetime.fromtimestamp(app.state.buckets[bucket][k][1], UTC).strftime('%Y-%m-%dT%H:%M:%S.000Z')}"
+            f"</LastModified><ETag>&quot;{hash(app.state.buckets[bucket][k][0]) & 0xffffff:x}&quot;</ETag>"
+            f"<Size>{len(app.state.buckets[bucket][k][0])}</Size></Contents>" for k in page)
+        body = (f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+                f"<Name>{bucket}</Name><Prefix>{escape(prefix)}</Prefix><KeyCount>{len(page)}</KeyCount>"
+                f"<IsTruncated>{'true' if more else 'false'}</IsTruncated>{items}"
+                + (f"<NextContinuationToken>{start + len(page)}</NextContinuationToken>" if more else "")
+                + "</ListBucketResult>")
+        return Response(body, media_type="application/xml")
+
+    @app.get("/{bucket}/{key:path}")
+    def get_object(bucket: str, key: str, request: Request):
+        if not verified(request):
+            return error(403, "SignatureDoesNotMatch", "The request signature we calculated does not match.")
+        obj = app.state.buckets.get(bucket, {}).get(key)
+        if obj is None:
+            return error(404, "NoSuchKey", "The specified key does not exist.")
+        return Response(obj[0], media_type="application/octet-stream",
+                        headers={"Last-Modified": formatdate(obj[1], usegmt=True)})
+
+    return app
+
+
 class FakeServer:
-    def __init__(self) -> None:
+    def __init__(self, app: FastAPI | None = None) -> None:
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
-        self.app = fake_app()
+        self.app = app or fake_app()
         self.server = uvicorn.Server(uvicorn.Config(self.app, host="127.0.0.1", port=self.port, log_level="warning"))
         self.thread = threading.Thread(target=self.server.run, daemon=True)
 

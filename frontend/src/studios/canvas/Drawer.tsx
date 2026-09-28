@@ -131,7 +131,7 @@ function DocsPanel({ pid, say, changed }: { pid: number; say: Say; changed: () =
     setProgress(0)
     try {
       const r = await uploadDocuments(pid, files, setProgress)
-      say(`Added ${r.documents.length} file${r.documents.length === 1 ? '' : 's'}${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}`)
+      say(`Added ${r.documents.length - r.held.length} file${r.documents.length - r.held.length === 1 ? '' : 's'}${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}${r.held.length ? `, held back ${r.held.length} that may be private (decide on the Knowledge page)` : ''}`)
     } catch (e) { say(errText(e)) }
     setProgress(null)
     load()

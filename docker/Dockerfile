@@ -1,4 +1,6 @@
-# One image for CPU and NVIDIA builds; docker-compose.gpu.yml switches the base.
+# One image for CPU and NVIDIA builds. The NVIDIA build (published as :X.Y.Z-cuda, or built by
+# docker-compose.gpu.yml) sets BASE_IMAGE to PyTorch's CUDA runtime image and CUDA_EXTRAS=1;
+# UNSLOTH=1 also installs Unsloth, which pins its own torch and transformers versions.
 ARG BASE_IMAGE=python:3.12-slim
 
 # ---- frontend build ----------------------------------------------------------
@@ -13,7 +15,9 @@ RUN npm run build
 FROM ${BASE_IMAGE}
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 ARG CUDA_EXTRAS=0
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+ARG UNSLOTH=0
+ARG VERSION=dev
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 LLMCOACH_VERSION=${VERSION} \
     LLMCOACH_DATA_DIR=/data HF_HOME=/data/hf-cache \
     LLMCOACH_OLLAMA_URL=http://host.docker.internal:11434
 
@@ -25,9 +29,13 @@ RUN python -c "import torch" 2>/dev/null || pip install torch --index-url "$TORC
 WORKDIR /app/backend
 COPY backend/requirements*.txt ./
 RUN pip install -r requirements.txt -r requirements-ml.txt \
- && if [ "$CUDA_EXTRAS" = "1" ]; then pip install -r requirements-cuda.txt; fi
+ && if [ "$CUDA_EXTRAS" = "1" ]; then pip install -r requirements-cuda.txt; fi \
+ && if [ "$UNSLOTH" = "1" ]; then pip install -r requirements-unsloth.txt; fi \
+ && python -c "import torch, transformers, peft, trl; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
 
 COPY backend/ ./
+# Fails the build on code the base image's Python can't compile.
+RUN python -m compileall -q app
 COPY scripts/ /app/scripts/
 COPY --from=web /web/dist /app/frontend/dist
 

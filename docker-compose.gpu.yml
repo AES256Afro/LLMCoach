@@ -5,6 +5,7 @@ services:
       args:
         BASE_IMAGE: pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
         CUDA_EXTRAS: "1"
+        UNSLOTH: "1"
     deploy:
       resources:
         reservations:

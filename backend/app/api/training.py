@@ -128,9 +128,22 @@ class ExportBody(BaseModel):
 QUANTIZE = (None, "q8_0", "q4_K_M")
 
 
+def _slug(project_name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", project_name.lower()).strip("-")[:30] or "project"
+
+
 def ollama_name(project_name: str, ft: FineTune) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", project_name.lower()).strip("-")[:30] or "project"
-    return f"llmcoach-{slug}-ft{ft.id}"
+    return f"llmcoach-{_slug(project_name)}-ft{ft.id}"
+
+
+def current_model_name(project_name: str) -> str:
+    """The Ollama model the learning loop keeps pointed at the promoted adapter."""
+    return f"llmcoach-{_slug(project_name)}-current"
+
+
+def submit_export(session: Session, project_id: int, ft: FineTune, name: str, quantize: str | None = "q8_0") -> Job:
+    return manager.submit(session, "export", {"finetune_id": ft.id, "name": name, "quantize": quantize, "provider": "ollama"},
+                          project_id=project_id)
 
 
 @router.post("/api/projects/{project_id}/finetunes/{ft_id}/export", status_code=201)
@@ -147,8 +160,7 @@ def export_finetune(project_id: int, ft_id: int, body: ExportBody, session: Sess
     name = (body.name or ollama_name(project.name, ft)).strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}(:[a-z0-9._-]{1,32})?", name):
         raise HTTPException(400, "the model name may use lowercase letters, digits, '.', '_' and '-'")
-    job = manager.submit(session, "export", {"finetune_id": ft.id, "name": name, "quantize": body.quantize, "provider": "ollama"},
-                         project_id=project_id)
+    job = submit_export(session, project_id, ft, name, body.quantize)
     return {"job": job, "model": f"ollama/{name}"}
 
 
