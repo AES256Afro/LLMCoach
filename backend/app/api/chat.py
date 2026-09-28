@@ -9,10 +9,10 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..db import Conversation, Message, engine, get_session, utcnow
-from ..services import kb, rag
+from ..services import kb, rag, web
 from ..services.providers import ProviderError, client_for, list_providers, resolve
 from .datasets import learn_into_chat_dataset
-from .knowledge import MAX_FILE_BYTES, hold_suspicious, retrieve, store_documents, submit_ingest
+from .knowledge import MAX_FILE_BYTES, _safe_name, hold_suspicious, retrieve, store_documents, submit_ingest
 from .projects import get_project_or_404
 
 log = logging.getLogger(__name__)
@@ -137,7 +137,8 @@ def _files_phrase(n: int) -> str:
 
 @router.post("/chat/attach", status_code=201)
 async def attach(project_id: int, mode: str = Form("remember"), conversation_id: int | None = Form(None),
-                 text: str = Form(""), title: str = Form(""), model: str | None = Form(None), check: bool = Form(True),
+                 text: str = Form(""), title: str = Form(""), url: str = Form(""), model: str | None = Form(None),
+                 check: bool = Form(True),
                  files: list[UploadFile] | None = File(None), session: Session = Depends(get_session)) -> dict:
     """Files dropped (or text pasted) into a chat.
 
@@ -154,8 +155,15 @@ async def attach(project_id: int, mode: str = Form("remember"), conversation_id:
     if text.strip():
         name = (title.strip() or f"Note {utcnow():%Y-%m-%d %H%M}")[:80]
         items.append((name if name.lower().endswith((".md", ".txt")) else f"{name}.md", text.encode("utf-8")))
+    page_url = None
+    if url.strip():
+        try:
+            page, data, page_url = await web.fetch(url, MAX_FILE_BYTES)
+        except web.WebError as e:
+            raise HTTPException(400, str(e)) from e
+        items.append((page, data))
     if not items:
-        raise HTTPException(400, "nothing to add: drop a file or paste some text")
+        raise HTTPException(400, "nothing to add: drop a file, paste some text or give a web address")
 
     if conversation_id is not None:
         conv = _conv(session, project_id, conversation_id)
@@ -166,6 +174,12 @@ async def attach(project_id: int, mode: str = Form("remember"), conversation_id:
         session.refresh(conv)
 
     added, skipped = await store_documents(session, project_id, items)
+    if page_url:
+        for d in added:
+            if d.filename == _safe_name(items[-1][0]):
+                d.source_url = page_url
+                session.add(d)
+        session.commit()
     ready, held = await hold_suspicious(session, added) if check else (added, [])
     ingest = submit_ingest(session, project, [d.id for d in ready]) if ready else None
     # Learning also covers files that were already in the knowledge base.
