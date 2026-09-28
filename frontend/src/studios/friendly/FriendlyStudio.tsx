@@ -4,7 +4,7 @@ import './friendly.css'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BookOpen, Check, ChevronRight, Database, FlaskConical, FolderInput, Loader2, Moon, Send, Sparkles, Table2, Zap } from 'lucide-react'
-import { api, uploadDocuments, type EvalRun, type JobEvent, type KBDocument, type ModelRef, type PipelineGraph, type SearchHit, type Source } from '../../api'
+import { api, defaultModel, uploadDocuments, type EvalRun, type JobEvent, type KBDocument, type ModelRef, type PipelineGraph, type SearchHit, type Source } from '../../api'
 import { metricRows } from '../../components/LossChart'
 import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
@@ -26,7 +26,7 @@ const TARGET: Record<Target, string> = {
 }
 const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^\d+: /, '') : String(e))
 const shortModel = (ref: string | null | undefined) => (ref ?? '').split('/').slice(1).join('/').split(':')[0] || ref || 'the model'
-const smallest = (ms: ModelRef[]) => [...ms].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? ''
+const smallest = (ms: ModelRef[]) => defaultModel(ms) ?? ''
 
 function Logo() {
   return <svg viewBox="0 0 30 30" width="30" height="30" aria-hidden="true"><rect width="30" height="30" rx="10" fill="#1f2346" /><circle cx="11" cy="13" r="3" fill="#ffbf2e" /><circle cx="19" cy="13" r="3" fill="#1fb58f" /><path d="M9 20c3.5 3 8.5 3 12 0" stroke="#ff6a3d" strokeWidth="2.4" fill="none" strokeLinecap="round" /></svg>
