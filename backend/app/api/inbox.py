@@ -432,13 +432,26 @@ async def _tick() -> None:
         waiting = set(s.exec(select(SourceFile.source_id).where(SourceFile.status == "waiting")).all()) if sources else set()
     now = utcnow()
     for src in sources:
+        if src.id in _polling:
+            continue  # still reading (a long scan or recording): its next look waits for it
         last = src.last_scan_at.replace(tzinfo=now.tzinfo) if src.last_scan_at else None
         age = (now - last).total_seconds() if last else None
         if age is None or age >= src.poll_seconds or (src.id in waiting and age >= SETTLE_SECONDS):
-            try:
-                await poll_source(src.id)
-            except Exception:
-                log.exception("inbox: polling source #%s failed", src.id)
+            _polling[src.id] = asyncio.create_task(_poll_in_background(src.id))
+
+
+# Polls run as their own tasks, so a source reading a long scan or recording (OCR, speech to text)
+# doesn't hold up the other sources or the learning loop's schedule, which share the heartbeat.
+_polling: dict[int, asyncio.Task] = {}
+
+
+async def _poll_in_background(source_id: int) -> None:
+    try:
+        await poll_source(source_id)
+    except Exception:
+        log.exception("inbox: polling source #%s failed", source_id)
+    finally:
+        _polling.pop(source_id, None)
 
 
 async def watch_forever() -> None:
