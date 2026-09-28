@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
@@ -28,6 +29,7 @@ from ..config import settings
 from ..db import Document, Project, Source, SourceFile, engine, get_session, utcnow
 from ..services import notify
 from ..services import scan as scanner
+from ..services import web
 from ..services.s3 import Bucket, S3Error, normalize_endpoint
 from ..services.parsing import SUPPORTED, ParseError, parse
 from .knowledge import MAX_FILE_BYTES, _safe_name, document_busy, remove_document, store_documents, submit_ingest
@@ -44,6 +46,7 @@ MODES = ("remember", "learn")
 SCANS = ("all", "secrets", "off")
 FINAL = ("added", "duplicate", "skipped", "quarantined", "rejected", "failed")
 GONE = ("gone", "forgotten")  # deleted from the folder, with or without its document
+MAX_WEB_PAGES = 200
 FORGET_AFTER_SECONDS = 60  # how long a deleted file stays away before its document goes too
 # Editors, sync tools and browsers write these while a real file is still on its way.
 _TEMP = re.compile(r"(^~\$|^\.|\.(tmp|part|partial|crdownload|download|swp)$)", re.I)
@@ -68,9 +71,15 @@ def normalize_folder(folder: str) -> str:
     return p.as_posix()
 
 
+MIRRORED = ("bucket", "web")  # kinds read into a folder of LLMCoach's own before each look
+WEB_MANIFEST = ".pages.json"  # hidden, so walk() skips it: address -> the file its page was saved as
+
+
 def source_root(src: Source) -> Path:
     if src.kind == "bucket":
         return settings.data_dir / "buckets" / str(src.id)
+    if src.kind == "web":
+        return settings.data_dir / "web" / str(src.id)
     root = settings.inbox_root
     path = (root / src.folder).resolve()
     if path != root and root not in path.parents:  # a symlink pointing out of the inbox
@@ -140,6 +149,50 @@ def sync_bucket(src: Source, root: Path) -> None:
             (root / rel).unlink(missing_ok=True)
 
 
+def _web_manifest(root: Path) -> dict[str, str]:
+    try:
+        return json.loads((root / WEB_MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+async def sync_web(src: Source, root: Path) -> list[str]:
+    """Fetches each page into root, rewriting a file only when its page changed. A page that can't
+    be fetched this time keeps its file (a site being down isn't a deletion); an address taken off
+    the list loses its file, which the ledger then treats like a deleted file. Returns the errors."""
+    before = _web_manifest(root)
+    now_names: dict[str, str] = {}
+    errors = []
+    for url in src.urls or []:
+        try:
+            name, data, _ = await web.fetch(url, MAX_FILE_BYTES)
+        except web.WebError as e:
+            errors.append(str(e))
+            if url in before:
+                now_names[url] = before[url]
+            continue
+        name = _safe_name(name)
+        taken = set(now_names.values())
+        stem, suffix, n = Path(name).stem, Path(name).suffix, 2
+        while name in taken:  # two pages with the same title
+            name, n = f"{stem} ({n}){suffix}", n + 1
+        now_names[url] = name
+        path = root / name
+        if path.exists() and path.read_bytes() == data:
+            continue  # unchanged: the ledger sees the same size and time
+        part = path.with_name(path.name + ".part")
+        await asyncio.to_thread(part.write_bytes, data)
+        os.replace(part, path)
+        settled = time.time() - OLD_FILE_SECONDS  # written in one go: nothing to wait for
+        os.utime(path, (settled, settled))
+    keep = set(now_names.values())
+    for rel, _, _ in walk(root):
+        if rel not in keep:
+            (root / rel).unlink(missing_ok=True)
+    (root / WEB_MANIFEST).write_text(json.dumps(now_names, indent=1), encoding="utf-8")
+    return errors
+
+
 def _extract_text(path: Path) -> str:
     return "\n\n".join(t for t, _ in parse(path))
 
@@ -186,7 +239,8 @@ async def _process(s: Session, src: Source, f: SourceFile, root: Path, review: b
             return None
     f.findings = None if not review else f.findings
 
-    added, skipped = await store_documents(s, src.project_id, [(name, data)])
+    url = next((u for u, n in _web_manifest(root).items() if n == f.relpath), None) if src.kind == "web" else None
+    added, skipped = await store_documents(s, src.project_id, [(name, data)], source_url=url)
     if added:
         f.status, f.doc_id = "added", added[0].id
         if old_doc and old_doc != f.doc_id and (doc := s.get(Document, old_doc)) is not None:
@@ -282,8 +336,11 @@ async def poll_source(source_id: int) -> dict:
             try:
                 root = source_root(src)
                 root.mkdir(parents=True, exist_ok=True)
+                fetch_errors: list[str] = []
                 if src.kind == "bucket":
                     await asyncio.to_thread(sync_bucket, src, root)
+                elif src.kind == "web":
+                    fetch_errors = await sync_web(src, root)
                 listing = await asyncio.to_thread(walk, root)
             except S3Error as e:
                 src.last_scan_at, src.last_error = utcnow(), f"can't read the bucket: {e}"
@@ -323,6 +380,8 @@ async def poll_source(source_id: int) -> dict:
                         f.doc_id = None
                     f.size_bytes, f.mtime, f.status = size, mtime, "waiting"
                     s.add(f)
+                    if src.kind in MIRRORED and now - mtime >= OLD_FILE_SECONDS:
+                        ready.append(f)  # LLMCoach wrote it in one go: no need to look again
                 elif f.status == "waiting" and now - mtime >= SETTLE_SECONDS:
                     ready.append(f)
             s.commit()
@@ -345,6 +404,9 @@ async def poll_source(source_id: int) -> dict:
                 notify.send("review", f"{len(held)} file{'s' if len(held) > 1 else ''} held for review",
                             f"In “{src.name}”: {', '.join(held[:5])}{more}. They may contain secrets or personal data.",
                             4, "lock")
+            if fetch_errors:
+                more = f" (and {len(fetch_errors) - 1} more)" if len(fetch_errors) > 1 else ""
+                warning = f"{fetch_errors[0]}{more}. Pages that couldn't be fetched keep their last version."
             src.last_scan_at, src.last_error = utcnow(), warning
             jobs = await _after_added(s, src, new_docs)
             s.add(src)
@@ -393,6 +455,9 @@ def _counts(s: Session, source_id: int) -> dict[str, int]:
 def _out(s: Session, src: Source) -> dict:
     if src.kind == "bucket":
         path = f"{src.endpoint}/{src.bucket}/{src.prefix or ''}"
+    elif src.kind == "web":
+        n = len(src.urls or [])
+        path = f"{n} web page{'s' if n != 1 else ''}"
     else:
         path = str(settings.inbox_root / src.folder) if src.folder != "." else str(settings.inbox_root)
     return {**src.model_dump(mode="json", exclude={"secret_key"}), "has_secret": bool(src.secret_key),
@@ -420,8 +485,9 @@ def list_sources(project_id: int, session: Session = Depends(get_session)) -> li
 
 class SourceCreate(BaseModel):
     name: str | None = None
-    kind: str = "folder"
+    kind: str = "folder"  # "folder" | "bucket" | "web"
     folder: str = ""
+    urls: list[str] | None = None  # web sources
     endpoint: str | None = None
     bucket: str | None = None
     prefix: str | None = None
@@ -446,6 +512,7 @@ class SourceUpdate(BaseModel):
     region: str | None = None
     access_key: str | None = None
     secret_key: str | None = None
+    urls: list[str] | None = None  # web sources: the page list, replaced whole
 
 
 _BUCKET_NAME = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
@@ -475,8 +542,16 @@ def create_source(project_id: int, body: SourceCreate, session: Session = Depend
     _validate(body.mode, body.scan, body.poll_seconds)
     if body.kind == "bucket":
         return _create_bucket_source(session, project_id, body)
+    if body.kind == "web":
+        src = Source(project_id=project_id, kind="web", folder="", urls=_check_urls(body.urls),
+                     name=(body.name or "Web pages").strip()[:80], mode=body.mode, scan=body.scan,
+                     poll_seconds=body.poll_seconds, mirror_deletes=body.mirror_deletes)
+        session.add(src)
+        session.commit()
+        session.refresh(src)
+        return _out(session, src)
     if body.kind != "folder":
-        raise HTTPException(400, "kind must be folder or bucket")
+        raise HTTPException(400, "kind must be folder, bucket or web")
     folder = normalize_folder(body.folder)
     for other in session.exec(select(Source).where(Source.kind == "folder")):
         # Folders are watched with their subfolders, so nested sources would read the same files twice.
@@ -491,6 +566,20 @@ def create_source(project_id: int, body: SourceCreate, session: Session = Depend
     session.commit()
     session.refresh(src)
     return _out(session, src)
+
+
+def _check_urls(urls: list[str] | None) -> list[str]:
+    cleaned = list(dict.fromkeys(u.strip() for u in urls or [] if u.strip()))
+    if not cleaned:
+        raise HTTPException(400, "give at least one web address")
+    if len(cleaned) > MAX_WEB_PAGES:
+        raise HTTPException(400, f"at most {MAX_WEB_PAGES} pages per source")
+    for u in cleaned:
+        try:
+            web.check_url(u)
+        except web.WebError as e:
+            raise HTTPException(400, f"{u}: {e}") from e
+    return cleaned
 
 
 def _create_bucket_source(session: Session, project_id: int, body: SourceCreate) -> dict:
@@ -529,6 +618,10 @@ def update_source(project_id: int, source_id: int, body: SourceUpdate, session: 
     src = _get_source(session, project_id, source_id)
     _validate(body.mode, body.scan, body.poll_seconds)
     patch = body.model_dump(exclude_none=True)
+    if "urls" in patch:
+        if src.kind != "web":
+            raise HTTPException(400, "only a web source has a page list")
+        patch["urls"] = _check_urls(patch["urls"])
     connection = {k: patch.pop(k) for k in ("endpoint", "region", "access_key", "secret_key") if k in patch}
     if connection and src.kind != "bucket":
         raise HTTPException(400, "only a bucket source has a connection to change")
@@ -555,8 +648,8 @@ def delete_source(project_id: int, source_id: int, session: Session = Depends(ge
     for f in session.exec(select(SourceFile).where(SourceFile.source_id == src.id)):
         session.delete(f)
     session.flush()
-    if src.kind == "bucket":
-        shutil.rmtree(source_root(src), ignore_errors=True)  # only the mirror; the bucket is untouched
+    if src.kind in MIRRORED:
+        shutil.rmtree(source_root(src), ignore_errors=True)  # only the mirror; the bucket or site is untouched
     session.delete(src)
     session.commit()
 
@@ -644,8 +737,8 @@ async def upload_to_source(project_id: int, source_id: int, files: list[UploadFi
     """Drops files into the source's folder, exactly as if they'd been copied there, and looks at
     them straight away. This is what API tokens with the "inbox" scope may call."""
     src = _get_source(session, project_id, source_id)
-    if src.kind == "bucket":
-        raise HTTPException(400, "this source reads a bucket; put files in the bucket instead")
+    if src.kind in MIRRORED:
+        raise HTTPException(400, f"this source reads {'a bucket; put files in the bucket' if src.kind == 'bucket' else 'web pages; add the address to its list'} instead")
     root = source_root(src)
     root.mkdir(parents=True, exist_ok=True)
     written, unchanged = [], []
@@ -669,7 +762,7 @@ def delete_project_sources(session: Session, project_id: int) -> None:
         session.delete(f)
     session.flush()
     for src in session.exec(select(Source).where(Source.project_id == project_id)):
-        if src.kind == "bucket":
+        if src.kind in MIRRORED:
             shutil.rmtree(source_root(src), ignore_errors=True)
         session.delete(src)
     session.flush()

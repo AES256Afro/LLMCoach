@@ -44,6 +44,9 @@ const STATUS_WORD: Record<FileStatus, string> = {
   gone: 'deleted, still known', forgotten: 'deleted and forgotten',
 }
 
+const every = (sec: number) =>
+  sec >= 86400 ? 'once a day' : sec >= 7200 ? `every ${Math.round(sec / 3600)} hours` : sec >= 120 ? `every ${Math.round(sec / 60)} min` : `every ${sec}s`
+
 function FileBadge({ status }: { status: FileStatus }) {
   return <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[status]}`}>{STATUS_WORD[status]}</span>
 }
@@ -60,7 +63,7 @@ export function Inbox() {
     <>
       <PageHeader
         title="Inbox"
-        subtitle="Folders LLMCoach watches. Files copied into them join the knowledge base without anyone opening the app, and the learning loop retrains overnight."
+        subtitle="Folders, buckets and web pages LLMCoach watches. What lands in them joins the knowledge base without anyone opening the app, and the learning loop retrains overnight."
       />
       <div role="tablist" className="mb-5 flex gap-1 border-b border-line">
         {tabs.map(([id, label]) => (
@@ -94,7 +97,7 @@ function Folders({ pid }: { pid: number }) {
       {adding || sources?.length === 0 ? (
         <AddSource pid={pid} root={info?.root} onDone={() => { setAdding(false); refresh() }} onCancel={sources?.length ? () => setAdding(false) : undefined} />
       ) : (
-        <Button variant="ghost" onClick={() => setAdding(true)}>Watch another folder or bucket</Button>
+        <Button variant="ghost" onClick={() => setAdding(true)}>Watch another folder, bucket or site</Button>
       )}
       {info && (
         <p className="text-xs text-muted">
@@ -177,7 +180,7 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
     onChange()
   }
   const total = Object.values(s.counts).reduce((a, b) => a + (b ?? 0), 0)
-  const where = s.kind === 'bucket' ? 'bucket' : 'folder'
+  const where = s.kind === 'bucket' ? 'bucket' : s.kind === 'web' ? 'list' : 'folder'
 
   return (
     <Card
@@ -214,10 +217,11 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
         <input type="checkbox" className="mt-0.5 accent-[var(--color-accent)]" checked={s.mirror_deletes}
                onChange={(e) => update({ mirror_deletes: e.target.checked })} />
         <span>
-          Forget files deleted from this {where}
+          {s.kind === 'web' ? 'Forget pages taken off the list' : `Forget files deleted from this ${where}`}
           <span className="block text-[11px] text-muted">
             {s.mirror_deletes
               ? `A file gone for a minute takes its document out of the knowledge base. Nothing is removed while the whole ${where} looks empty${s.kind === 'bucket' ? '' : ', as an unplugged share would'}.`
+              : s.kind === 'web' ? 'Off: a page taken off the list keeps its document.'
               : `Off: documents stay after their file is deleted, so the ${where} can be cleared once files are in.`}
           </span>
         </span>
@@ -228,7 +232,7 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
           <span key={k} className={`rounded-full px-2 py-0.5 ${STATUS_STYLE[k]}`}>{s.counts[k]} {STATUS_WORD[k]}</span>
         ))}
         <span className="ml-auto text-muted">
-          {!s.enabled ? 'Paused' : s.last_scan_at ? `Looked ${fmtTime(s.last_scan_at)} · every ${s.poll_seconds}s` : 'Not looked at yet'}
+          {!s.enabled ? 'Paused' : s.last_scan_at ? `Looked ${fmtTime(s.last_scan_at)} · ${every(s.poll_seconds)}` : 'Not looked at yet'}
         </span>
       </div>
       {s.last_error && <p className="mt-2 text-xs text-bad">{s.last_error}</p>}
@@ -237,6 +241,11 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
         <>
           {note && <p className="mt-3 text-xs">{note}</p>}
           <BucketKeys pid={pid} source={s} onChange={onChange} />
+        </>
+      ) : s.kind === 'web' ? (
+        <>
+          {note && <p className="mt-3 text-xs">{note}</p>}
+          <WebPages pid={pid} source={s} onChange={onChange} />
         </>
       ) : (
         <div
@@ -256,6 +265,45 @@ function SourceCard({ pid, source: s, onChange }: { pid: number; source: Source;
       )}
       {open && <Ledger pid={pid} sourceId={s.id} />}
     </Card>
+  )
+}
+
+function WebPages({ pid, source: s, onChange }: { pid: number; source: Source; onChange: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState((s.urls ?? []).join('\n'))
+  const [error, setError] = useState<string | null>(null)
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    try {
+      await api.updateSource(pid, s.id, { urls: text.split(/\s+/).filter(Boolean) })
+      setEditing(false)
+      onChange()
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
+    }
+  }
+  if (!editing) {
+    return (
+      <div className="mt-3 text-xs text-muted">
+        <ul className="space-y-0.5">
+          {(s.urls ?? []).slice(0, 6).map((u) => <li key={u} className="truncate font-mono"><a href={u} target="_blank" rel="noreferrer" className="hover:text-accent">{u}</a></li>)}
+        </ul>
+        {(s.urls?.length ?? 0) > 6 && <div className="mt-0.5">and {(s.urls?.length ?? 0) - 6} more</div>}
+        <button className="mt-1.5 text-accent hover:underline" onClick={() => { setText((s.urls ?? []).join('\n')); setEditing(true) }}>Edit the list</button>
+      </div>
+    )
+  }
+  return (
+    <form onSubmit={save} className="mt-3 space-y-2">
+      <textarea className={`${inputCls} h-32 font-mono text-xs`} value={text} onChange={(e) => setText(e.target.value)} />
+      {error && <p className="text-xs text-bad">{error}</p>}
+      <div className="flex gap-2">
+        <Button type="submit">Save</Button>
+        <Button type="button" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+      </div>
+      <p className="text-[11px] text-muted">A page taken off the list counts as a deleted file: its document stays unless “Forget” is on.</p>
+    </form>
   )
 }
 
@@ -334,7 +382,9 @@ function Ledger({ pid, sourceId }: { pid: number; sourceId: number }) {
 }
 
 function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string; onDone: () => void; onCancel?: () => void }) {
-  const [kind, setKind] = useState<'folder' | 'bucket'>('folder')
+  const [kind, setKind] = useState<Source['kind']>('folder')
+  const [urls, setUrls] = useState('')
+  const [every, setEvery] = useState(86400)
   const [folder, setFolder] = useState('')
   const [bucket, setBucket] = useState({ endpoint: '', bucket: '', prefix: '', region: '', access_key: '', secret_key: '' })
   const setB = (k: keyof typeof bucket) => (e: React.ChangeEvent<HTMLInputElement>) => setBucket((b) => ({ ...b, [k]: e.target.value }))
@@ -350,7 +400,9 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
     try {
       await api.createSource(pid, kind === 'folder'
         ? { folder, name: name || undefined, mode, scan }
-        : { kind, ...bucket, name: name || undefined, mode, scan, poll_seconds: 120 })
+        : kind === 'web'
+          ? { kind, urls: urls.split(/\s+/).filter(Boolean), name: name || undefined, mode, scan, poll_seconds: every }
+          : { kind, ...bucket, name: name || undefined, mode, scan, poll_seconds: 120 })
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
@@ -358,9 +410,9 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
     setBusy(false)
   }
   return (
-    <Card title={kind === 'folder' ? 'Watch a folder' : 'Watch a bucket'}>
-      <div role="radiogroup" className="mb-4 flex gap-1 text-sm">
-        {([['folder', 'A folder or network share'], ['bucket', 'An S3 or MinIO bucket']] as const).map(([k, label]) => (
+    <Card title={kind === 'folder' ? 'Watch a folder' : kind === 'bucket' ? 'Watch a bucket' : 'Keep web pages up to date'}>
+      <div role="radiogroup" className="mb-4 flex flex-wrap gap-1 text-sm">
+        {([['folder', 'A folder or network share'], ['bucket', 'An S3 or MinIO bucket'], ['web', 'Web pages']] as const).map(([k, label]) => (
           <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
                   className={`rounded-md border px-3 py-1.5 ${kind === k ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-text'}`}>
             {label}
@@ -368,7 +420,23 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
         ))}
       </div>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-        {kind === 'folder' ? (
+        {kind === 'web' ? (
+          <>
+            <div className="sm:col-span-2">
+              <Field label="Pages, one address per line" hint="Each is fetched on every look; a page that changed replaces its document. Up to 200.">
+                <textarea className={`${inputCls} h-28 font-mono text-xs`} value={urls} onChange={(e) => setUrls(e.target.value)}
+                          placeholder={'https://docs.example.com/install\nhttps://docs.example.com/faq'} required />
+              </Field>
+            </div>
+            <Field label="Read them again">
+              <select className={inputCls} value={every} onChange={(e) => setEvery(Number(e.target.value))}>
+                <option value={3600}>Every hour</option>
+                <option value={21600}>Every 6 hours</option>
+                <option value={86400}>Once a day</option>
+              </select>
+            </Field>
+          </>
+        ) : kind === 'folder' ? (
           <Field label="Folder inside the inbox" hint={root ? `Created under ${root} if it doesn't exist. Subfolders are included.` : undefined}>
             <input className={inputCls} value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="contracts" required />
           </Field>
@@ -395,7 +463,7 @@ function AddSource({ pid, root, onDone, onCancel }: { pid: number; root?: string
           </>
         )}
         <Field label="Name (optional)">
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'folder' ? 'Contracts' : 'Team docs'} />
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'folder' ? 'Contracts' : kind === 'web' ? 'Product docs' : 'Team docs'} />
         </Field>
         <Field label="What to do with new files">
           <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as SourceMode)}>

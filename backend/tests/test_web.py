@@ -8,6 +8,47 @@ def test_page_names():
     assert page_name("https://x.org/", ".html", b"<p>no title</p>") == "x.org.html"
 
 
+def test_web_source_rereads_its_pages(client, fake):
+    pid = client.post("/api/projects", json={"name": "web-source"}).json()["id"]
+    base = f"{fake.url}/pages"
+    assert client.post(f"/api/projects/{pid}/sources", json={"kind": "web", "urls": []}).status_code == 400
+    assert client.post(f"/api/projects/{pid}/sources", json={"kind": "web", "urls": ["notaurl"]}).status_code == 400
+    r = client.post(f"/api/projects/{pid}/sources", json={
+        "kind": "web", "name": "Harbor site", "poll_seconds": 86400,
+        "urls": [f"{base}/harbor.html", f"{base}/changelog.html", f"{base}/missing", f"{base}/harbor.html"]})
+    assert r.status_code == 201, r.text
+    src = r.json()
+    assert src["kind"] == "web" and len(src["urls"]) == 3 and src["path"] == "3 web pages"  # duplicates dropped
+    scan = lambda: client.post(f"/api/projects/{pid}/sources/{src['id']}/scan").json()  # noqa: E731
+    fake.app.state.page_version = 1
+    out = scan()
+    assert out["processed"] == {"added": 2}
+    wait_final(client, out["ingest_job_id"])
+    listed = next(x for x in client.get(f"/api/projects/{pid}/sources").json() if x["id"] == src["id"])
+    assert "404" in listed["last_error"] and "keep their last version" in listed["last_error"]
+    docs = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs["Changelog.html"]["source_url"] == f"{base}/changelog.html"
+
+    # Unchanged pages are left alone; a changed one replaces its document in the same look.
+    assert scan()["processed"] == {}
+    fake.app.state.page_version = 2
+    out = scan()
+    assert out["processed"] == {"added": 1}
+    wait_final(client, out["ingest_job_id"])
+    docs2 = {d["filename"]: d for d in client.get(f"/api/projects/{pid}/documents").json()}
+    assert docs2["Changelog.html"]["id"] != docs["Changelog.html"]["id"]
+    assert docs2["Harbor Ferry Guide.html"]["id"] == docs["Harbor Ferry Guide.html"]["id"]
+
+    # Taking an address off the list is like deleting the file: its document stays unless mirroring.
+    client.patch(f"/api/projects/{pid}/sources/{src['id']}", json={"urls": [f"{base}/harbor.html"]})
+    scan()
+    files = {f["relpath"]: f for f in client.get(f"/api/projects/{pid}/sources/{src['id']}/files").json()["files"]}
+    assert files["Changelog.html"]["status"] == "gone"
+    r = client.post(f"/api/projects/{pid}/sources/{src['id']}/upload", files=[("files", ("x.md", b"# x", "text/markdown"))])
+    assert r.status_code == 400 and "web pages" in r.json()["detail"]
+    assert client.delete(f"/api/projects/{pid}/sources/{src['id']}").status_code == 204
+
+
 def test_add_a_web_page(client, fake):
     pid = client.post("/api/projects", json={"name": "web-pages"}).json()["id"]
     r = client.post(f"/api/projects/{pid}/documents/url", json={"url": f"{fake.url}/pages/redirect"})
