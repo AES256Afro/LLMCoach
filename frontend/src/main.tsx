@@ -5,6 +5,7 @@ import './index.css'
 import { AuthGate } from './components/AuthGate'
 import { Layout } from './components/Layout'
 import { Compare } from './pages/Compare'
+import { AddPage } from './pages/AddPage'
 import { Dashboard } from './pages/Dashboard'
 import { Datasets } from './pages/Datasets'
 import { JobDetail } from './pages/JobDetail'
@@ -58,6 +59,7 @@ const router = createBrowserRouter([
       { path: '/logs', element: <Logs /> },
       { path: '/providers', element: <Providers /> },
       { path: '/knowledge', element: <KnowledgeBase /> },
+      { path: '/add', element: <AddPage /> },
       { path: '/inbox', element: <Inbox /> },
       { path: '/datasets', element: <Datasets /> },
       { path: '/train', element: <Train /> },

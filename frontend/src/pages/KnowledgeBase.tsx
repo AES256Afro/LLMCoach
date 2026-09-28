@@ -4,6 +4,7 @@ import {
   type Chunk, type DocStatus, type KBDocument, type KnowledgeStats, type SearchHit, type UploadResult,
 } from '../api'
 import { HeldFiles } from '../components/HeldFiles'
+import { bookmarklet } from '../bookmarklet'
 import { JobProgress } from '../components/JobProgress'
 import { PageHeader } from '../components/Layout'
 import { ModelSelect } from '../components/ModelSelect'
@@ -107,6 +108,8 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
   const [error, setError] = useState<string | null>(null)
   const [url, setUrl] = useState('')
   const [fetching, setFetching] = useState(false)
+  // React refuses javascript: links in JSX, so the bookmarklet's address is set on the element itself.
+  const setBookmarklet = (el: HTMLAnchorElement | null) => { el?.setAttribute('href', bookmarklet()) }
 
   const addPage = async (e: FormEvent) => {
     e.preventDefault()
@@ -175,6 +178,10 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
                type="url" placeholder="…or add a web page: https://" value={url} onChange={(e) => setUrl(e.target.value)} />
         <Button type="submit" variant="ghost" disabled={!url.trim() || fetching}>{fetching ? 'Fetching…' : 'Add page'}</Button>
       </form>
+      <p className="mt-2 text-xs text-muted">
+        Or drag <a ref={setBookmarklet} className="rounded border border-line px-1.5 py-0.5 text-text hover:border-accent" title="Drag me to your bookmarks bar"
+                   onClick={(e) => e.preventDefault()}>Send to LLMCoach</a> to your bookmarks bar, then click it on any page to add that page here.
+      </p>
       {error && <div className="mt-3 text-sm text-bad">{error}</div>}
       {result && (
         <div className="mt-3 space-y-1 text-xs">
