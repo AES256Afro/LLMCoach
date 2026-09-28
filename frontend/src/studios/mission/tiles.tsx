@@ -29,6 +29,39 @@ export function Meter({ label, pct, value }: { label: string; pct: number | null
   )
 }
 
+/** The last few minutes of percentages (0-100) as lines on a fixed 0-100 scale, newest at the right. */
+export function Trend({ series, span = 150, height = 34 }: {
+  series: { label: string; values: (number | null)[]; color: string }[]
+  span?: number // samples across the full width, so a fresh page fills in from the right
+  height?: number
+}) {
+  const w = 300
+  const line = (values: (number | null)[]) => {
+    const pts: string[] = []
+    values.forEach((v, i) => {
+      if (v == null) return
+      const x = w - (values.length - 1 - i) * (w / (span - 1))
+      pts.push(`${x.toFixed(1)},${(height - (Math.max(0, Math.min(100, v)) / 100) * (height - 2) - 1).toFixed(1)}`)
+    })
+    return pts.join(' ')
+  }
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }} aria-hidden>
+        <line x1="0" x2={w} y1={height / 2} y2={height / 2} stroke="var(--mc-off)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
+        {series.map((s) => (
+          <polyline key={s.label} points={line(s.values)} fill="none" stroke={s.color} strokeWidth="1.25" vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+      <div className="mt-1 flex gap-3 text-[10px] mc-dim">
+        <span>−{Math.round((span * 2) / 60)} MIN</span>
+        {series.map((s) => <span key={s.label} style={{ color: s.color }}>— {s.label}</span>)}
+        <span className="ml-auto">NOW</span>
+      </div>
+    </div>
+  )
+}
+
 /** "██████░░░░" as two spans, so the empty part can be drawn dim. */
 export function Blocks({ value, width = 24 }: { value: number; width?: number }) {
   const n = Math.round(Math.max(0, Math.min(1, value)) * width)
