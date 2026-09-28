@@ -47,7 +47,7 @@ export default function MissionStudio() {
   const [scanlines, setScanlinesState] = useState(() => stored('llmcoach.mission.scanlines', true))
   const setContrast = (v: boolean) => { setContrastState(v); store('llmcoach.mission.contrast', v) }
   const setScanlines = (v: boolean) => { setScanlinesState(v); store('llmcoach.mission.scanlines', v) }
-  const { stats, logs: appLogs, connected } = useSystemStream()
+  const { stats, history, logs: appLogs, connected } = useSystemStream()
   const pid = project?.id
   const { data: jobs } = usePolling<Job[]>(() => (pid ? api.jobs({ limit: 30, project_id: pid }) : Promise.resolve([])), 3000, [pid])
   const { data: providers } = usePolling<ProviderStatus[]>(api.providerStatus, 15000)
@@ -84,7 +84,7 @@ export default function MissionStudio() {
   if (!project) return <div className="studio-mission grid h-full place-items-center">LOADING…</div>
 
   const m: Mission = {
-    project, stats, appLogs, jobs: jobs ?? [], providers, finetunes: finetunes ?? [], evals: evals ?? [],
+    project, stats, history, appLogs, jobs: jobs ?? [], providers, finetunes: finetunes ?? [], evals: evals ?? [],
     wall, contrast, setContrast, scanlines, setScanlines,
   }
   const ollama = providers?.find((p) => p.provider.slug === 'ollama')

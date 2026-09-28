@@ -8,14 +8,15 @@ import {
 import type { AppLog } from '../../api'
 import { parseUtc } from '../../components/ui'
 import { usePolling } from '../../hooks/usePolling'
-import { useJobStream } from '../../hooks/streams'
+import { useJobStream, type StatsSample } from '../../hooks/streams'
 import { startingConversation, useChatSession } from '../chat/useChatSession'
 import { nextSteps, type Target } from '../recommend'
-import { Blocks, LogTail, LossChart, Meter, Tile, gb, mmss, type Series } from './tiles'
+import { Blocks, LogTail, LossChart, Meter, Tile, Trend, gb, mmss, type Series } from './tiles'
 
 export interface Mission {
   project: Project
   stats: SystemStats | null
+  history: StatsSample[]
   appLogs: AppLog[]
   jobs: Job[]
   providers: ProviderStatus[] | null
@@ -67,6 +68,15 @@ export function SystemTile({ m, style }: { m: Mission; style?: React.CSSProperti
         <Meter label="GPU" pct={gpu?.util_pct ?? null} value={gpu?.util_pct != null ? `${gpu.util_pct.toFixed(0)}%` : '—'} />
         {gpu && <Meter label="VRAM" pct={gpu.vram_total_gb ? ((gpu.vram_used_gb ?? 0) / gpu.vram_total_gb) * 100 : null} value={gb(gpu.vram_used_gb)} />}
       </div>
+      {m.history.length > 1 && (
+        <div className="mt-2.5">
+          <Trend series={[
+            { label: 'CPU', values: m.history.map((h) => h.cpu), color: 'var(--mc-am)' },
+            { label: 'RAM', values: m.history.map((h) => h.ram), color: 'var(--mc-dim)' },
+            ...(gpu ? [{ label: 'VRAM', values: m.history.map((h) => h.vram), color: 'var(--mc-grn)' }] : []),
+          ]} />
+        </div>
+      )}
       {gpu && (
         <div className="mt-2 flex gap-4 text-[11px] mc-am2">
           <span>{gpu.name}</span>
