@@ -70,8 +70,9 @@ in Classic and an Inbox section in the Chat studio's context rail):
   `Document.source_url`, and adds it like an upload, check included. A **web source** keeps a list of
   pages (up to 200) up to date: each look fetches them into `data/web/<id>` and rewrites only pages
   that changed, so the ledger replaces just those documents; a page that can't be fetched keeps its
-  last version, and one taken off the list counts as a deleted file. A `….xml` address is read as a
-  sitemap and stands for the pages it lists (following a sitemap index one level). Not yet: RSS.
+  last version, and one taken off the list counts as a deleted file. A sitemap or an RSS/Atom feed
+  address (`….xml`, `.rss`, `.atom`, `/feed`) stands for the pages it lists, following a sitemap index
+  one level. Answers citing a web page link back to it (`source_url` travels with each search hit).
 
 L2 is complete.
 

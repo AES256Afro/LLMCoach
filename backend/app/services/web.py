@@ -43,31 +43,38 @@ def page_name(url: str, ext: str, data: bytes) -> str:
     return title if title.lower().endswith(ext) else f"{title}{ext}"
 
 
+# Addresses listed by a sitemap (<loc>), an RSS feed (<item>…<link>) or an Atom feed (<entry>…<link href>).
 _LOC = re.compile(rb"<loc>\s*(.*?)\s*</loc>", re.I | re.S)
+_RSS_ITEM = re.compile(rb"<item\b.*?<link>\s*(.*?)\s*</link>", re.I | re.S)
+_ATOM_ENTRY = re.compile(rb"<entry\b.*?<link\b[^>]*?href=[\"']([^\"']+)[\"']", re.I | re.S)
 
 
-def is_sitemap(url: str) -> bool:
-    return PurePosixPath(urlsplit(url).path).name.lower().endswith(".xml")
+def is_listing(url: str) -> bool:
+    """A sitemap or a feed: an address that stands for the pages it lists."""
+    name = PurePosixPath(urlsplit(url).path).name.lower()
+    return name.endswith((".xml", ".rss", ".atom")) or name in ("feed", "rss", "atom")
 
 
-async def sitemap_pages(url: str, limit: int) -> list[str]:
-    """The page addresses a sitemap lists, following a sitemap index one level down."""
+async def listed_pages(url: str, limit: int) -> list[str]:
+    """The page addresses a sitemap or feed lists, following a sitemap index one level down."""
     async with httpx.AsyncClient(timeout=httpx.Timeout(20, read=60), follow_redirects=True, max_redirects=5) as client:
-        async def locs(u: str) -> list[str]:
+        async def links(u: str) -> list[str]:
             try:
                 r = await client.get(check_url(u))
             except httpx.HTTPError as e:
                 raise WebError(f"couldn't fetch {u}: {e}") from e
             if r.status_code >= 400:
                 raise WebError(f"{u} answered {r.status_code} {r.reason_phrase}")
-            return [html.unescape(m.decode("utf-8", "replace")) for m in _LOC.findall(r.content[:20_000_000])]
+            body = r.content[:20_000_000]
+            found = _LOC.findall(body) or _RSS_ITEM.findall(body) or _ATOM_ENTRY.findall(body)
+            return [html.unescape(m.decode("utf-8", "replace")) for m in found]
 
         pages: list[str] = []
-        for loc in await locs(url):
-            if is_sitemap(loc):
-                pages += [p for p in await locs(loc) if not is_sitemap(p)]
+        for link in await links(url):
+            if is_listing(link):
+                pages += [p for p in await links(link) if not is_listing(p)]
             else:
-                pages.append(loc)
+                pages.append(link)
             if len(pages) >= limit:
                 break
     return list(dict.fromkeys(pages))[:limit]

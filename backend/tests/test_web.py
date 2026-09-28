@@ -59,6 +59,17 @@ def test_web_source_follows_a_sitemap(client, fake):
     assert docs == {"Harbor Ferry Guide.html": f"{fake.url}/pages/harbor.html", "notes.txt": f"{fake.url}/pages/notes.txt"}
 
 
+def test_web_source_follows_a_feed_and_answers_link_back(client, fake):
+    pid = client.post("/api/projects", json={"name": "web-feed"}).json()["id"]
+    src = client.post(f"/api/projects/{pid}/sources", json={"kind": "web", "urls": [f"{fake.url}/pages/feed"]}).json()
+    out = client.post(f"/api/projects/{pid}/sources/{src['id']}/scan").json()
+    assert out["processed"] == {"added": 2}  # the channel's own <link> isn't an item
+    wait_final(client, out["ingest_job_id"])
+    hits = client.post(f"/api/projects/{pid}/search", json={"query": "harbor office opening hours", "top_k": 4}).json()["results"]
+    pages = {"notes.txt": f"{fake.url}/pages/notes.txt", "Changelog.html": f"{fake.url}/pages/changelog.html"}
+    assert hits and all(h["source_url"] == pages[h["filename"]] for h in hits)  # each cites its page
+
+
 def test_add_a_web_page(client, fake):
     pid = client.post("/api/projects", json={"name": "web-pages"}).json()["id"]
     r = client.post(f"/api/projects/{pid}/documents/url", json={"url": f"{fake.url}/pages/redirect"})
