@@ -11,6 +11,7 @@ LLMCoach has **studios**: different front ends over the same projects, for peopl
 - **Pipeline Canvas** (`/canvas`): the project drawn as a flow from folders to evaluations. Click any step to work on it in a drawer, and press *Run pipeline* to redo only what changed.
 - **Field Notebook** (`/notebook`): a calm, light studio in four steps. Answers read as prose with their sources quoted in the margin, and every evaluation becomes a short written report you can copy, download or print.
 - **Friendly Studio** (`/friendly`): rounded, colourful and plain-spoken, for people new to all this. Results come as one sentence, every step is one button, and "What to try next" says what would help most.
+- **Workbench** (`/workbench`): an IDE for small models. An explorer of documents, datasets, runs and chats, tabs, docked logs, run settings as code with diffs, and Ctrl K to reach anything.
 - **Classic**: every page and setting in one dashboard (below).
 
 ## What it does
@@ -44,6 +45,7 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0 (buckets and export to Ollama still to come) |
 | L3 | Pipeline Canvas: the project as an editable flow, Run pipeline | ✅ 0.6.0 |
 | L4 | Mission Control studio and ntfy alerts | ✅ 0.5.0 |
+| L5 | Workbench: explorer, tabs, docked logs, settings as code, Ctrl K to everything | ✅ 0.7.0 |
 | L6 | Field Notebook: guided steps, margin citations, evaluation reports | ✅ 0.7.0 |
 | L7 | Friendly Studio and the shared "what to try next" service | ✅ 0.7.0 |
 
