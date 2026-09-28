@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
       - run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr  # the OCR tests read a scanned PDF
       - run: pip install -r backend/requirements.txt
-      - run: python -m pytest -q
+      - run: python -m pytest -q -rs  # -rs lists what was skipped and why
         working-directory: backend
       - uses: actions/setup-node@v4
         with:
