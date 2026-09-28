@@ -31,11 +31,14 @@ def fake_app() -> FastAPI:
     def version():
         return {"version": "0.0-fake"}
 
+    app.state.extra_models = []  # tests add models here, e.g. an exported LLMCoach fine-tune
+
     @app.get("/api/tags")
     def tags():
         return {"models": [
             {"name": "chatty:1b", "size": 1024**3, "details": {"family": "llama", "parameter_size": "1B"}},
             {"name": "nomic-embed-text:latest", "size": 1024**2 * 270, "details": {"family": "nomic-bert"}},
+            *app.state.extra_models,
         ]}
 
     @app.post("/api/chat")

@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   BookOpen, Brain, Library, ListChecks, LogOut, Menu, MessagesSquare, PanelRight, Plus, Search, SlidersHorizontal, Trash2, X,
 } from 'lucide-react'
-import { api, type AttachMode } from '../../api'
+import { api, ownModel, type AttachMode } from '../../api'
 import { useAuth } from '../../components/AuthGate'
 import { ProjectSwitcher } from '../../components/ProjectSwitcher'
 import { useProject } from '../../hooks/project'
@@ -77,7 +77,7 @@ export default function ChatStudio() {
   const [fallbackModel, setFallbackModel] = useState<string | null>(null)
   useEffect(() => {
     api.models('chat').then((ms) => {
-      const sorted = [...ms].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))
+      const sorted = [...ms].sort((a, b) => Number(ownModel(a.ref)) - Number(ownModel(b.ref)) || (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))
       setFallbackModel(sorted[0]?.ref ?? null)
     }).catch(() => {})
   }, [])

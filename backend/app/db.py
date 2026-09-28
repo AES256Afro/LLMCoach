@@ -39,6 +39,7 @@ DEFAULT_PROJECT_SETTINGS: dict[str, Any] = {
     "top_k": 5,
     "search_mode": "hybrid",  # "hybrid" (keywords + vectors) or "vector"
     "system_prompt": None,  # default system prompt for new chats
+    "qa_model": None,  # writes practice Q&A; None = the chat's model, unless it's one of LLMCoach's own fine-tunes
 }
 
 

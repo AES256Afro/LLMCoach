@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { api, type Chunk, type EvalRun, type JobEvent, type ModelRef, type PipelineGraph, type SearchHit, type Split, type TrainPlan } from '../../api'
+import { api, defaultModel, type Chunk, type EvalRun, type JobEvent, type ModelRef, type PipelineGraph, type SearchHit, type Split, type TrainPlan } from '../../api'
 import { metricRows } from '../../components/LossChart'
 import { stripAnsi } from '../../components/ansi'
 import { fmtTime } from '../../components/ui'
@@ -70,7 +70,7 @@ export function ChatTab({ id, rename, g }: TabProps & { id: string }) {
   useEffect(() => { api.models('chat').then(setModels).catch(() => {}) }, [])
   useEffect(() => { if (id !== 'new') session.open(Number(id)) }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (id === 'new' && active) rename('chat:new', `chat:${active.id}`) }, [id, active, rename])
-  const model = settings.model ?? active?.model ?? [...models].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? ''
+  const model = settings.model ?? active?.model ?? defaultModel(models) ?? ''
   const msgs = (active?.messages ?? []).filter((m) => m.role !== 'event')
   const lastAnswer = [...msgs].reverse().find((m) => m.role === 'assistant')
   const shown = pick?.msg === 'pending' ? pending?.sources : pick ? msgs.find((m) => m.id === pick.msg)?.sources : pending?.sources ?? lastAnswer?.sources
@@ -245,7 +245,7 @@ export function FinetuneTab({ g, id, open, setOutput, say }: TabProps & { id: nu
   const evaluate = async () => {
     if (ft.dataset_id == null) return
     try {
-      const chat = (g.chat.model ?? [...(await api.models('chat'))].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref) || null
+      const chat = (g.chat.model ?? defaultModel(await api.models('chat'))) || null
       const variants = [{ kind: 'finetune' as const, ref: String(ft.id), rag: false }, ...(chat ? [{ kind: 'model' as const, ref: chat, rag: g.knowledge.chunks > 0 }] : [])]
       const r = await api.createEval(pid, { dataset_id: ft.dataset_id, max_examples: 20, variants })
       say(`evaluation #${r.eval.id} queued (job #${r.job.id})`)

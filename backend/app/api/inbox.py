@@ -316,7 +316,7 @@ def _handle_missing(s: Session, src: Source, rows: dict[str, SourceFile], presen
 
 async def _after_added(s: Session, src: Source, doc_ids: list[int]) -> dict:
     """Indexes the new documents and, for a "learn" source, queues practice Q&A after them."""
-    from .chat import default_chat_model
+    from .chat import writer_model
     from .datasets import learn_into_chat_dataset
 
     if not doc_ids:
@@ -326,7 +326,7 @@ async def _after_added(s: Session, src: Source, doc_ids: list[int]) -> dict:
     out = {"ingest_job_id": job.id}
     if src.mode == "learn":
         try:
-            model = project.effective_settings().get("chat_model") or await default_chat_model(s)
+            model = await writer_model(s, project)
         except HTTPException as e:
             src.last_error = f"indexed, but couldn't learn from the files: {e.detail}"
             return out

@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, Columns2, Cpu, FileText, FlaskConical, FolderInput, FolderTree, LayoutGrid, MessagesSquare, PanelBottom,
   Play, Plus, Search, Settings, Table2, TerminalSquare, Zap,
 } from 'lucide-react'
-import { api, uploadDocuments, type Conversation, type Job, type KBDocument, type PipelineGraph, type ProviderStatus } from '../../api'
+import { api, defaultModel, uploadDocuments, type Conversation, type Job, type KBDocument, type PipelineGraph, type ProviderStatus } from '../../api'
 import { useProject } from '../../hooks/project'
 import { usePolling } from '../../hooks/usePolling'
 import { useJobStream, useSystemStream } from '../../hooks/streams'
@@ -162,7 +162,7 @@ export default function WorkbenchStudio() {
     add({ group: 'Train', label: 'New fine-tune from a dataset…', icon: Zap, keys: 'settings as code', run: () => open('new-finetune:') })
     add({ group: 'Knowledge', label: 'Upload documents…', icon: FileText, run: () => fileInput.current?.click() })
     add({ group: 'Datasets', label: 'Generate Q&A from the knowledge base', icon: Table2, run: async () => {
-      try { const ms = await api.models('chat'); const m = [...ms].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref; if (!m) return say('no chat model')
+      try { const ms = await api.models('chat'); const m = defaultModel(ms); if (!m) return say('no chat model')
         const r = await api.generateDataset(g.project.id, { model: m, pairs_per_chunk: 3, max_chunks: 20, style: 'closed', val: 0.1, test: 0.1 }); say(`generating into ${r.dataset.name} (job #${r.job.id})`); open(`dataset:${r.dataset.id}`) } catch (e) { say(String(e)) } } })
     add({ group: 'Pipeline', label: 'Run pipeline: look at folders, index, learn, retrain if changed', icon: Play, run: async () => { try { const r = await api.runPipeline(g.project.id); say(r.waiting ? 'pipeline waiting for indexing and Q&A' : r.run?.reason ?? `loop run #${r.run?.id}`) } catch (e) { say(String(e)) } } })
     add({ group: 'Learning loop', label: 'Run now', icon: Play, run: async () => { try { const r = await api.runLoop(g.project.id); say(`loop run #${r.id}: ${r.reason ?? r.status}`) } catch (e) { say(String(e)) } } })
