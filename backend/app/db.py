@@ -222,12 +222,21 @@ class Setting(SQLModel, table=True):
 class Source(SQLModel, table=True):
     """A folder LLMCoach watches ("an inbox"): files that land in it join the knowledge base.
 
-    `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk."""
+    `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk.
+    A "bucket" source reads an S3-compatible bucket instead (MinIO, AWS, R2...): its objects are
+    mirrored into data/buckets/<id> and from there handled exactly like a folder's files."""
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     name: str
-    folder: str  # relative to inbox_dir; "." is the root itself
+    kind: str = "folder"  # "folder" | "bucket"
+    folder: str  # relative to inbox_dir; "." is the root itself; "" for a bucket
+    endpoint: str | None = None  # bucket sources: http(s)://host:port
+    bucket: str | None = None
+    prefix: str | None = None  # only keys under this are read, e.g. "team/notes/"
+    region: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None  # never returned by the API
     mode: str = "remember"  # "remember" (index) | "learn" (index, then write practice Q&A)
     scan: str = "all"  # "all" (secrets and personal data) | "secrets" | "off"
     enabled: bool = True

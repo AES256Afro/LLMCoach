@@ -445,7 +445,14 @@ export interface Source {
   id: number
   project_id: number
   name: string
-  folder: string
+  kind: 'folder' | 'bucket'
+  folder: string // folder sources: relative to the inbox ("." is its root)
+  endpoint: string | null // bucket sources (S3, MinIO...)
+  bucket: string | null
+  prefix: string | null
+  region: string | null
+  access_key: string | null
+  has_secret: boolean
   path: string
   mode: SourceMode
   scan: SourceScan
@@ -703,9 +710,10 @@ export const api = {
   deleteProject: (id: number) => request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   inbox: () => request<InboxInfo>('/api/inbox'),
   sources: (pid: number) => request<Source[]>(`/api/projects/${pid}/sources`),
-  createSource: (pid: number, body: { name?: string; folder: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
+  createSource: (pid: number, body: { name?: string; kind?: 'folder' | 'bucket'; folder?: string; endpoint?: string; bucket?: string; prefix?: string
+    region?: string; access_key?: string; secret_key?: string; mode: SourceMode; scan: SourceScan; poll_seconds?: number }) =>
     request<Source>(`/api/projects/${pid}/sources`, { method: 'POST', body: JSON.stringify(body) }),
-  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes'>>) =>
+  updateSource: (pid: number, id: number, patch: Partial<Pick<Source, 'name' | 'mode' | 'scan' | 'enabled' | 'poll_seconds' | 'mirror_deletes' | 'endpoint' | 'region' | 'access_key'>> & { secret_key?: string }) =>
     request<Source>(`/api/projects/${pid}/sources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteSource: (pid: number, id: number) => request<void>(`/api/projects/${pid}/sources/${id}`, { method: 'DELETE' }),
   scanSource: (pid: number, id: number) => request<PollResult>(`/api/projects/${pid}/sources/${id}/scan`, { method: 'POST' }),

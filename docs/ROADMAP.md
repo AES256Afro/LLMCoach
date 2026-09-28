@@ -14,7 +14,7 @@ repo. What LLMCoach needs from it is listed there (section 6) and at the end of 
 |---|---|---|
 | L0 | Studio framework | ✅ 0.3.0, finished in 0.7.0: registry, switcher that remembers the choice (`llmcoach.studio` in localStorage), lazy-loaded studio bundles, CSS-scope theming, and **switching keeps you on the same thing**: studios pass a `StudioContext` (conversation, fine-tune, evaluation, dataset, document) and `studioLink()` maps it to each studio's deep link (`/chat/1`, `/workbench?open=finetune:3`, `/notebook/report/2`, `/canvas?node=ds-1`, `?c=1` for the chat-based ones). |
 | L1 | Just the Chat, with drag-and-drop learning | ✅ 0.3.0: drop onto Remember / Learn, cited answers with a context rail, `/train /compare /learn /logs /model /kb /help /classic` as live cards. **Not yet:** a "Review" drop target (look at generated Q&A before it joins the dataset). |
-| L2 | Inbox and learning loop | ✅ 0.4.0 for the core, see below. |
+| L2 | Inbox and learning loop | ✅ 0.4.0 for the core, buckets and deleted files in 0.8.0; see below. |
 | L3 | Pipeline Canvas | ✅ 0.6.0 at `/canvas`: the project drawn from its real objects (folders → documents → knowledge base → chat and datasets → fine-tunes → evaluations, with the learning loop as a gate), React Flow (MIT), drag to rearrange (remembered per project), a drawer per node, blue lineage for the selected node, and **Run pipeline**: looks at every folder (the ledger skips files it has seen), waits for indexing and Q&A, then retrains only if the data or the training settings changed. Phones get a list of cards. **Not yet:** drawing new connections by hand (steps are added from the drawers and the Add step menu), and schedules as their own nodes. |
 | L4 | Mission Control | ✅ 0.5.0 at `/console`: F1–F9 views of live tiles, a read-only wall view (F9 / W) that follows the running job, earlier runs overlaid on the loss chart, GPU temperature and power in the header, a readable-contrast setting (C), and ntfy alerts (F8) for finished and failed jobs, loop decisions and held files. **Not yet:** a GPU history chart (power and temperature over time); the header only shows the current values. |
 | L5 | Workbench | ✅ 0.7.0 at `/workbench`: an explorer tree of the project's real objects, tabs (chats, documents, datasets, fine-tunes, evaluations, jobs) remembered per project, an inspector for sources, logs docked below (Ctrl \`), a status bar, and Ctrl K reaching every object, command, studio and Classic page. Run settings as code: a new fine-tune is editable JSON with a dry run, and any run's config can be diffed against another's. `?open=finetune:3` deep-links a tab. **Not yet:** true split panes (two tabs side by side). |
@@ -50,9 +50,16 @@ in Classic and an Inbox section in the Chat studio's context rail):
   it only when F1 beats the current one by the margin. Runs chain through `AFTER_HOOKS` in
   `services/jobs.py`. The promoted adapter is marked by `FineTune.promoted_at` (the model registry).
 
-Still to do for L2:
+- **Buckets** (0.8.0): a source can read an S3-compatible bucket and prefix (MinIO, AWS, R2, Garage)
+  instead of a folder. Each look mirrors new and changed objects into `data/buckets/<id>` and deletes
+  mirror files whose object is gone; from there it is an ordinary folder, so settling, checks, the
+  ledger and deletions behave the same. Objects that won't be read (too large, or a type LLMCoach
+  can't parse) aren't downloaded: a sparse placeholder of the same size lets the ledger say why.
+  Requests are signed with SigV4 in `services/s3.py` (checked against botocore's signatures in the
+  tests) rather than through an SDK. A read-only key is enough; the secret is never returned by the
+  API, and a new key is checked by listing the bucket before it's saved.
 
-- **Buckets** (MinIO / S3 prefixes) as a source kind, polled like folders.
+L2 is complete.
 
 Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):
 the adapter is merged into its base model, the safetensors and the base model's original tokenizer

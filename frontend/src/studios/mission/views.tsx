@@ -367,7 +367,7 @@ export function KnowView({ m }: { m: Mission }) {
             {sources.map((s) => (
               <Fragment key={s.id}>
                 <span className={!s.enabled ? 'mc-dim' : s.last_error ? 'mc-bad' : 'mc-ok'}>{s.enabled ? '●' : '○'}</span>
-                <span>{s.name} <span className="mc-dim">{s.folder}{s.mode === 'learn' ? ' · LEARN' : ''}</span></span>
+                <span>{s.name} <span className="mc-dim">{s.kind === 'bucket' ? `s3://${s.bucket}/${s.prefix ?? ''}` : s.folder}{s.mode === 'learn' ? ' · LEARN' : ''}</span></span>
                 <span className="mc-dim">{s.counts.added ?? 0} in{s.counts.quarantined ? ` · ${s.counts.quarantined} held` : ''}</span>
               </Fragment>
             ))}
