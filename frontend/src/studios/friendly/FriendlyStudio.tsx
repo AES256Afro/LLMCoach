@@ -251,6 +251,7 @@ function Chat({ g, changed }: { g: PipelineGraph; changed: () => void }) {
   const [opened, setOpened] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => { api.models('chat').then(setModels).catch(() => {}) }, [])
+  useEffect(() => { const m = new URLSearchParams(window.location.search).get('model'); if (m) setSettings((s) => ({ ...s, model: m })) }, [setSettings])
   useEffect(() => { if (!opened && !active && session.conversations.length) { setOpened(true); session.open(startingConversation(session.conversations)!) } }, [opened, active, session])
   const msgs = (active?.messages ?? []).filter((m) => m.role !== 'event')
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [msgs.length, pending?.answer])
@@ -409,6 +410,10 @@ function Train({ g, changed }: { g: PipelineGraph; changed: () => void }) {
     } catch (e) { setSaid(errText(e)) }
     setBusy(false)
   }
+  const exporting = new Set(g.active_jobs.filter((j) => j.kind === 'export').map((j) => Number(j.config.finetune_id)))
+  const useInChat = async (id: number) => {
+    try { await api.exportFinetune(pid, id); setSaid('Getting this version ready to chat with. It takes a minute or two.'); changed() } catch (e) { setSaid(errText(e)) }
+  }
   const teach = async () => {
     if (!trainable.length) return
     setBusy(true)
@@ -464,7 +469,9 @@ function Train({ g, changed }: { g: PipelineGraph; changed: () => void }) {
             <div key={v.id} className="fr-doc">
               <i className={`fr-badge-file ${v.promoted_at ? 't-mint' : 't-sky'}`}>v{versions.length - i}</i>
               <div className="min-w-0"><b>Version {versions.length - i}</b><small>{v.promoted_at ? 'in use · ' : ''}{v.finished_at ? new Date(v.finished_at + (v.finished_at.endsWith('Z') ? '' : 'Z')).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</small></div>
-              {v.promoted_at && <Check className="ok h-4 w-4" />}
+              {v.ollama_model
+                ? <a className="fr-btn soft ml-auto !px-3 !py-1.5 text-xs" href={`/friendly/chat?model=${encodeURIComponent(v.ollama_model)}`}>Chat with it</a>
+                : <button className="fr-btn soft ml-auto !px-3 !py-1.5 text-xs" disabled={exporting.has(v.id)} onClick={() => useInChat(v.id)}>{exporting.has(v.id) ? 'Getting ready…' : 'Use in chat'}</button>}
             </div>
           ))}
         </div>

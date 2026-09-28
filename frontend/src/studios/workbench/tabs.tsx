@@ -253,6 +253,8 @@ export function FinetuneTab({ g, id, open, setOutput, say }: TabProps & { id: nu
     } catch (e) { say(errText(e)) }
   }
   const promote = async () => { try { await (ft.promoted_at ? api.demote(pid, ft.id) : api.promote(pid, ft.id)); say(ft.promoted_at ? 'unset as current' : 'now the current adapter') } catch (e) { say(errText(e)) } }
+  const exporting = g.active_jobs.some((j) => j.kind === 'export' && Number(j.config.finetune_id) === ft.id)
+  const sendToOllama = async () => { try { const r = await api.exportFinetune(pid, ft.id); say(`exporting to ${r.model} (job #${r.job.id})`); open(`job:${r.job.id}`) } catch (e) { say(errText(e)) } }
   return (
     <>
       <Toolbar>
@@ -261,6 +263,8 @@ export function FinetuneTab({ g, id, open, setOutput, say }: TabProps & { id: nu
         <span className="ml-auto flex flex-wrap gap-1.5">
           <button className="wb-btn" onClick={evaluate} disabled={ft.status !== 'ready'}>evaluate</button>
           <button className="wb-btn" onClick={promote} disabled={ft.status !== 'ready'}>{ft.promoted_at ? 'unset current' : 'make current'}</button>
+          <button className="wb-btn" onClick={sendToOllama} disabled={ft.status !== 'ready' || exporting}>{exporting ? 'exporting…' : ft.ollama_model ? 're-export to ollama' : 'send to ollama'}</button>
+          {ft.ollama_model && <a className="wb-btn" href={`/chat?model=${encodeURIComponent(ft.ollama_model)}`}>chat with it</a>}
           <button className="wb-btn pri" onClick={() => open(`new-finetune:from-${ft.id}`)}>re-run with new settings</button>
         </span>
       </Toolbar>

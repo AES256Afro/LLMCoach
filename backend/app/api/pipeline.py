@@ -53,7 +53,7 @@ def pipeline(project_id: int, session: Session = Depends(get_session)) -> dict:
             select(Dataset).where(Dataset.project_id == project_id).order_by(Dataset.id))],
         "finetunes": [{"id": f.id, "name": f.name, "base_model": f.base_model, "dataset_id": f.dataset_id, "status": f.status,
                        "job_id": f.job_id, "promoted_at": f.promoted_at, "metrics": f.metrics, "method": f.method,
-                       "config": f.config, "finished_at": f.finished_at} for f in session.exec(
+                       "config": f.config, "finished_at": f.finished_at, "ollama_model": f.ollama_model} for f in session.exec(
             select(FineTune).where(FineTune.project_id == project_id).order_by(FineTune.id))],
         "evals": [{"id": e.id, "name": e.name, "dataset_id": e.dataset_id, "status": e.status, "variants": e.variants,
                    "summary": e.summary, "job_id": e.job_id} for e in session.exec(

@@ -38,6 +38,10 @@ export default function ChatStudio() {
   const pid = project?.id
 
   useEffect(() => rememberStudio('chat'), [])
+  useEffect(() => {
+    const model = new URLSearchParams(window.location.search).get('model')
+    if (model) setSettings((s) => ({ ...s, model }))
+  }, [setSettings])
 
   // ---- URL <-> conversation ------------------------------------------------------------------
   const params = useParams()
