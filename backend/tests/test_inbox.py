@@ -459,3 +459,30 @@ def test_next_occurrence():
     assert loop_api.next_occurrence(11, 0, base) == base.replace(hour=11)
     assert loop_api.next_occurrence(9, 0, base) == base.replace(hour=9) + timedelta(days=1)
     assert loop_api.next_occurrence(10, 0, base) == base + timedelta(days=1)
+
+
+@pytest.mark.anyio
+async def test_watcher_does_not_wait_for_a_slow_source(client, monkeypatch):
+    import asyncio
+
+    from app.api import inbox as inbox_api
+
+    pid = _project(client, "parallel-polls")
+    a, b = _source(client, pid, "par-a"), _source(client, pid, "par-b")
+    started: list[int] = []
+    release = asyncio.Event()
+
+    async def slow(source_id: int) -> dict:  # a source reading a long recording
+        started.append(source_id)
+        await release.wait()
+        return {}
+
+    monkeypatch.setattr(inbox_api, "poll_source", slow)
+    await asyncio.wait_for(inbox_api._tick(), 2)  # the tick returns at once
+    await asyncio.sleep(0)
+    assert {a["id"], b["id"]} <= set(started)
+    await inbox_api._tick()  # still reading: not started a second time
+    assert started.count(a["id"]) == 1 and started.count(b["id"]) == 1
+    release.set()
+    await asyncio.sleep(0.05)
+    assert a["id"] not in inbox_api._polling and b["id"] not in inbox_api._polling
