@@ -1,6 +1,9 @@
-# Tests, then publishes ghcr.io/aes256afro/llmcoach.
-#   push to main  -> :edge
-#   tag v1.2.3    -> :1.2.3 and :latest   (what BoxPilot's catalog pins)
+# Tests, then publishes ghcr.io/aes256afro/llmcoach in two variants:
+#   push to main  -> :edge          and :edge-cuda
+#   tag v1.2.3    -> :1.2.3 :latest and :1.2.3-cuda :latest-cuda   (BoxPilot's catalog pins one)
+# The -cuda image is built on PyTorch's CUDA runtime image and adds bitsandbytes (QLoRA); it needs an
+# NVIDIA GPU with the NVIDIA Container Toolkit on the host. Running the workflow by hand on another
+# branch builds both images without pushing, to check a change to the image before it's released.
 name: image
 
 on:
@@ -36,7 +39,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            suffix: ""
+            build-args: ""
+          - variant: cuda
+            suffix: "-cuda"
+            build-args: |
+              BASE_IMAGE=pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+              CUDA_EXTRAS=1
     steps:
+      - name: Make room for the CUDA base image
+        if: matrix.variant == 'cuda'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -48,6 +66,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/aes256afro/llmcoach
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }}
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -57,8 +78,10 @@ jobs:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          build-args: ${{ matrix.build-args }}
+          push: ${{ steps.meta.outputs.tags != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          # The CUDA layers are several GB: caching only the final stages keeps the CPU cache from being evicted.
+          cache-to: type=gha,scope=${{ matrix.variant }},mode=${{ matrix.variant == 'cuda' && 'min' || 'max' }}

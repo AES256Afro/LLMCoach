@@ -158,7 +158,7 @@ def plan(base_model: str, preset: str, overrides: dict, method: str, backend: st
     if backend == "auto":
         backend = hw["recommended_backend"]
     if backend == "unsloth" and not (device == "cuda" and hw["unsloth_installed"]):
-        raise PlanError("Unsloth needs an NVIDIA GPU and the unsloth package (the GPU image includes it)")
+        raise PlanError("Unsloth needs an NVIDIA GPU and the unsloth package (build the image with UNSLOTH=1)")
     if backend not in ("hf", "unsloth"):
         raise PlanError("backend must be auto, hf or unsloth")
 
