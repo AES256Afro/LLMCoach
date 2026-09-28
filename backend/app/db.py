@@ -307,6 +307,9 @@ class LearningLoop(SQLModel, table=True):
     # A "Run pipeline" is waiting for indexing and practice-Q&A jobs to finish before it trains.
     pending_run: bool = False
     last_config: str | None = None  # "<base model>|<preset>" of the last completed run
+    # After each promotion, rebuild ollama/llmcoach-<project>-current from the promoted adapter, so
+    # a chat pointed at that name always gets the best version without anyone switching models.
+    export_on_promote: bool = False
 
 
 class LoopRun(SQLModel, table=True):

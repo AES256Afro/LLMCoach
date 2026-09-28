@@ -183,6 +183,11 @@ def main() -> None:
         ft = s.get(FineTune, int(c["finetune_id"]))
         ft.ollama_model = ref
         s.add(ft)
+        # A name can be rebuilt from another adapter (the learning loop's "-current" model): the one
+        # it came from before no longer has it.
+        for other in s.exec(select(FineTune).where(FineTune.ollama_model == ref, FineTune.id != ft.id)):
+            other.ollama_model = None
+            s.add(other)
         s.commit()
     shutil.rmtree(out, ignore_errors=True)  # Ollama has its own copy now
     ctx.progress(4, 4, "done")
