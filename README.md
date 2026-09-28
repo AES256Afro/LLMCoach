@@ -109,6 +109,7 @@ backend/app/
   auth.py              single-owner sign-in (signed cookie; off when no password is set)
   api/                 REST + WebSocket routes (jobs, projects, knowledge, chat, datasets, training, evals, ...)
   api/inbox.py         watched folders and buckets: the poller, ledger and review queue
+  api/bundles.py       export a project as one zip, import it on another install
   api/loop.py          the learning loop: train -> evaluate -> promote, chained by an after-job hook
   api/tokens.py        API tokens for scripts (hash stored; "inbox" scope can only upload)
   services/scan.py     secret and personal-data checks for incoming files
