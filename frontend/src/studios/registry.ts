@@ -19,7 +19,7 @@ export const STUDIOS: StudioInfo[] = [
   { id: 'mission', name: 'Mission Control', tagline: 'Live tiles for watching runs', path: '/console', status: 'ready', milestone: 'L4', swatch: ['#060705', '#ffb000', '#9be07a'] },
   { id: 'workbench', name: 'Workbench', tagline: 'Tabs, panes and a command palette', path: '/workbench', status: 'planned', milestone: 'L5', swatch: ['#15171b', '#4ec3cf', '#e2b35a'] },
   { id: 'notebook', name: 'Field Notebook', tagline: 'A calm, guided, report-style studio', path: '/notebook', status: 'ready', milestone: 'L6', swatch: ['#fbfbf9', '#1e5a4b', '#f8e58c'] },
-  { id: 'friendly', name: 'Friendly Studio', tagline: 'Plain language, recipes and next steps', path: '/friendly', status: 'planned', milestone: 'L7', swatch: ['#ff6a3d', '#1fb58f', '#ffbf2e'] },
+  { id: 'friendly', name: 'Friendly Studio', tagline: 'Plain language, recipes and next steps', path: '/friendly', status: 'ready', milestone: 'L7', swatch: ['#ff6a3d', '#1fb58f', '#ffbf2e'] },
 ]
 
 const KEY = 'llmcoach.studio'
