@@ -105,6 +105,24 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
   const [progress, setProgress] = useState<number | null>(null)
   const [result, setResult] = useState<UploadResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [url, setUrl] = useState('')
+  const [fetching, setFetching] = useState(false)
+
+  const addPage = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setResult(null)
+    setFetching(true)
+    try {
+      const r = await api.addUrl(pid, url.trim())
+      setResult(r)
+      setUrl('')
+      onUploaded(r)
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^\d+: /, '') : String(err))
+    }
+    setFetching(false)
+  }
 
   const send = async (files: File[]) => {
     if (!files.length) return
@@ -152,6 +170,11 @@ function UploadCard({ pid, onUploaded }: { pid: number; onUploaded: (r: UploadRe
           </div>
         </div>
       )}
+      <form className="mt-3 flex gap-2" onSubmit={addPage}>
+        <input className="min-w-0 flex-1 rounded border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent"
+               type="url" placeholder="…or add a web page: https://" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <Button type="submit" variant="ghost" disabled={!url.trim() || fetching}>{fetching ? 'Fetching…' : 'Add page'}</Button>
+      </form>
       {error && <div className="mt-3 text-sm text-bad">{error}</div>}
       {result && (
         <div className="mt-3 space-y-1 text-xs">
@@ -273,6 +296,9 @@ function DocumentTable({ docs, selected, onSelect, onDelete, onReindex }: {
                       className="text-left hover:text-accent disabled:hover:text-text" title="Browse chunks">
                 {d.filename}
               </button>
+              {d.source_url && (
+                <a href={d.source_url} target="_blank" rel="noreferrer" className="ml-1.5 text-xs text-muted hover:text-accent" title={d.source_url}>↗</a>
+              )}
               {d.error && <div className={`text-xs ${d.status === 'held' ? 'text-warn' : 'text-bad'}`}>{d.error}</div>}
             </td>
             <td className="py-2">

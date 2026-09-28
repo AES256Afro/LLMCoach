@@ -89,6 +89,52 @@ def fake_app() -> FastAPI:
         body = await req.json()
         return {"data": [{"index": i, "embedding": _vec(t)} for i, t in enumerate(body["input"])]}
 
+    # ---- web pages ------------------------------------------------------------------
+    from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+
+    @app.get("/pages/harbor.html")
+    def harbor_page():
+        body = "".join(f"<p>Harbor section {i}. The ferry leaves at 07:40 and the lantern is lit at dusk.</p>" for i in range(12))
+        return HTMLResponse(f"<html><head><title>Harbor &amp; Ferry Guide</title></head><body>{body}</body></html>")
+
+    @app.get("/pages/redirect")
+    def redirect_page():
+        return RedirectResponse("/pages/harbor.html")
+
+    app.state.page_version = 1
+
+    @app.get("/pages/changelog.html")
+    def changelog():
+        v = app.state.page_version
+        return HTMLResponse(f"<title>Changelog</title>" + f"<p>Release {v}: the harbor app now shows ferry times. </p>" * 10)
+
+    @app.get("/pages/sitemap.xml")
+    def sitemap(request: Request):
+        base = str(request.base_url).rstrip("/")
+        return Response(f"""<?xml version="1.0"?><sitemapindex><sitemap><loc>{base}/pages/sitemap-docs.xml</loc></sitemap></sitemapindex>""",
+                        media_type="application/xml")
+
+    @app.get("/pages/sitemap-docs.xml")
+    def sitemap_docs(request: Request):
+        base = str(request.base_url).rstrip("/")
+        locs = "".join(f"<url><loc>{base}/pages/{p}</loc></url>" for p in ("harbor.html", "notes.txt"))
+        return Response(f"<?xml version=\"1.0\"?><urlset>{locs}</urlset>", media_type="application/xml")
+
+    @app.get("/pages/feed")
+    def rss(request: Request):
+        base = str(request.base_url).rstrip("/")
+        items = "".join(f"<item><title>{p}</title><link>{base}/pages/{p}</link></item>" for p in ("changelog.html", "notes.txt"))
+        return Response(f"<rss><channel><title>Harbor news</title><link>{base}/</link>{items}</channel></rss>",
+                        media_type="application/rss+xml")
+
+    @app.get("/pages/notes.txt")
+    def notes_page():
+        return PlainTextResponse("Opening hours: the harbor office opens at 08:00 on weekdays. " * 10)
+
+    @app.get("/pages/logo.png")
+    def logo():
+        return Response(b"PNG-bytes", media_type="image/png")
+
     # ---- ntfy ---------------------------------------------------------------------
     app.state.ntfy = []
 

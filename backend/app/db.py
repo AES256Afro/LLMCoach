@@ -93,6 +93,7 @@ class Document(SQLModel, table=True):
     char_count: int = 0
     embed_model: str | None = None  # model the stored vectors came from
     error: str | None = None
+    source_url: str | None = None  # the web address it was fetched from, if any
     created_at: datetime = Field(default_factory=utcnow)
     ingested_at: datetime | None = None
 
@@ -225,12 +226,13 @@ class Source(SQLModel, table=True):
 
     `folder` is relative to settings.inbox_dir, so a source can never point elsewhere on disk.
     A "bucket" source reads an S3-compatible bucket instead (MinIO, AWS, R2...): its objects are
-    mirrored into data/buckets/<id> and from there handled exactly like a folder's files."""
+    mirrored into data/buckets/<id> and from there handled exactly like a folder's files. A "web"
+    source does the same for a list of page addresses, fetched into data/web/<id> on each look."""
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
     name: str
-    kind: str = "folder"  # "folder" | "bucket"
+    kind: str = "folder"  # "folder" | "bucket" | "web"
     folder: str  # relative to inbox_dir; "." is the root itself; "" for a bucket
     endpoint: str | None = None  # bucket sources: http(s)://host:port
     bucket: str | None = None
@@ -238,6 +240,7 @@ class Source(SQLModel, table=True):
     region: str | None = None
     access_key: str | None = None
     secret_key: str | None = None  # never returned by the API
+    urls: list[str] | None = Field(default=None, sa_column=Column(JSON))  # web sources: pages re-read each look
     mode: str = "remember"  # "remember" (index) | "learn" (index, then write practice Q&A)
     scan: str = "all"  # "all" (secrets and personal data) | "secrets" | "off"
     enabled: bool = True

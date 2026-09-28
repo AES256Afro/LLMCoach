@@ -30,6 +30,8 @@
 .fr-btn.mint { background: var(--mint); color: #fff; }
 .fr-btn.soft { background: #f5f7fc; color: var(--ink); }
 .fr-btn:disabled { opacity: .45; cursor: default; }
+.fr-url { flex: 1; min-width: 0; border: 2px solid #e6e9f2; border-radius: 14px; padding: 9px 13px; font: inherit; font-size: 13px; color: var(--ink); background: #fff; outline: none; }
+.fr-url:focus { border-color: var(--pri); }
 .fr-hero .fr-btn { margin-left: auto; position: relative; z-index: 1; }
 .fr-grid { display: grid; gap: 16px; }
 .fr-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }

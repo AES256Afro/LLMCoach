@@ -64,6 +64,21 @@ in Classic and an Inbox section in the Chat studio's context rail):
   and the chat card or the Knowledge page offers *Index anyway* or *Remove*. The owner is there when
   uploading, so this is a heads-up rather than the inbox's review queue.
 
+- **Web pages** (0.9.0): `/add <url>` or `/learn <url>` in the chat, or the address box on the Knowledge
+  page, fetches a page, PDF or text file (`services/web.py`: http(s) only, the size limit applies, the
+  type decides the parser, HTML is named after its `<title>`), keeps the final address as
+  `Document.source_url`, and adds it like an upload, check included. A **web source** keeps a list of
+  pages (up to 200) up to date: each look fetches them into `data/web/<id>` and rewrites only pages
+  that changed, so the ledger replaces just those documents; a page that can't be fetched keeps its
+  last version, and one taken off the list counts as a deleted file. A sitemap or an RSS/Atom feed
+  address (`….xml`, `.rss`, `.atom`, `/feed`) stands for the pages it lists, following a sitemap index
+  one level. Answers citing a web page link back to it (`source_url` travels with each search hit).
+- **Scanned PDFs** (0.9.0): a PDF with no text layer is read with Tesseract OCR (in the image; the
+  CI tests read a generated scan). The result is cached by the file's hash, so the inbox's check and
+  the indexing job read a scan once between them; an upload's check skips OCR (someone is waiting),
+  and the indexing job reads the scan. English only unless more `tesseract-ocr-<lang>` packages are
+  added to the image.
+
 L2 is complete.
 
 Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):
