@@ -20,13 +20,13 @@ The typical loop: put your documents in the **Knowledge Base**, chat with them i
 
 | Page | What you can do |
 |---|---|
-| **Knowledge Base** | Upload PDF, Markdown, text, HTML, DOCX, CSV and JSON. It's chunked (Markdown-section aware), embedded, and stored in LanceDB, with **hybrid search** (keywords + vectors). Browse chunks and test retrieval with scores. |
+| **Knowledge Base** | Upload PDF, Markdown, text, HTML, DOCX, CSV and JSON, or add a **web page by its address**. Scanned PDFs are read with **OCR** (Tesseract). It's chunked (Markdown-section aware), embedded, and stored in LanceDB, with **hybrid search** (keywords + vectors). Files that look like they hold secrets or personal data are **held** until you index or remove them. Browse chunks and test retrieval with scores. |
 | **Playground** | Streaming chat with any model on any provider. The knowledge-base toggle gives **cited answers** with the passages shown. Reasoning models' thinking shows in its own panel. tok/s, time to first token, and saved conversations. |
 | **Datasets** | Import JSONL, JSON or CSV (chat, Alpaca, prompt/completion, question/answer, ShareGPT), with row-level validation and a seeded train/val/test split. You can also **generate Q&A pairs from the knowledge base** with any chat model. |
 | **Train** | LoRA / QLoRA fine-tuning with Quick/Balanced/Thorough presets and a **memory estimate against your hardware** before launch, plus live loss, eval-loss and learning-rate charts. It uses **Unsloth** on an NVIDIA GPU and **TRL + PEFT** elsewhere (CPU included, for models under 1B). |
 | **Compare** | Run a test split through up to six variants: models, fine-tunes, each with or without the knowledge base. Scores are exact match, F1 and ROUGE-L, plus an optional **LLM judge** (1–5 with reasons), shown side by side with overlap highlighting. |
-| **Inbox** | Watched folders and buckets: files copied into a folder (or a share on the network), or objects put in an S3 or MinIO bucket, join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
-| **Export** | Send a fine-tune to Ollama with one button (Workbench, Canvas, or *Use in chat* in the Friendly Studio): it's merged, quantized and built on the Ollama server, then works in every chat like any other model. A 0.5B fine-tune answers several times faster than an 8B model. |
+| **Inbox** | Watched folders, buckets and web pages: files copied into a folder (or a share on the network), objects put in an S3 or MinIO bucket, or a list of pages, a sitemap or a feed re-read on a schedule, join the knowledge base on their own, after a check for **secrets and personal data** that holds suspect files for review. A folder set to *Learn* also writes practice Q&A. Scripts can push files with an **API token**. The **learning loop** retrains overnight and promotes the new adapter only if it scores better on held-out questions. |
+| **Export** | Send a fine-tune to Ollama with one button (Train page, Workbench, Canvas, or *Use in chat* in the Friendly Studio): it's merged, quantized and built on the Ollama server, then works in every chat like any other model. A 0.5B fine-tune answers several times faster than an 8B model. The learning loop can keep `llmcoach-<project>-current` pointed at the best adapter. A whole project can be **downloaded as one zip** and imported on another install. |
 | **Providers** | Ollama (default) plus any OpenAI-compatible server, with presets for **llama.cpp, vLLM, SGLang, LocalAI and Text Embeddings Inference**. Models are named `provider/model`, so tasks can mix them. |
 | **Jobs / Logs** | Everything heavy runs as a queued job in its own process, with live logs, progress, charts and cancel. |
 
@@ -41,14 +41,15 @@ All of it is open source and Linux-friendly: Ollama (MIT), llama.cpp (MIT), vLLM
 | 2 | Providers, Knowledge Base, Playground | ✅ |
 | 3 | Datasets (import + generation), LoRA/QLoRA training | ✅ |
 | 4 | Eval + Compare | ✅ |
-| 5 | Export fine-tunes to GGUF / Ollama; vLLM live adapter loading; Axolotl (DPO/ORPO) | ⏳ |
+| 5 | Export fine-tunes to Ollama | ✅ 0.7.0 (vLLM live adapter loading and DPO/ORPO still to come) |
 | L0–L1 | Studios framework and the Chat studio | ✅ 0.3.0 |
-| L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0, buckets in 0.8.0 |
+| L2 | Inbox: watched folders, review queue, API tokens, nightly learning loop | ✅ 0.4.0; buckets 0.8.0; web pages and OCR 0.9.0 |
 | L3 | Pipeline Canvas: the project as an editable flow, Run pipeline | ✅ 0.6.0 |
 | L4 | Mission Control studio and ntfy alerts | ✅ 0.5.0 |
 | L5 | Workbench: explorer, tabs, docked logs, settings as code, Ctrl K to everything | ✅ 0.7.0 |
 | L6 | Field Notebook: guided steps, margin citations, evaluation reports | ✅ 0.7.0 |
 | L7 | Friendly Studio and the shared "what to try next" service | ✅ 0.7.0 |
+| — | Moving a project between installs (one zip) | ✅ 0.10.0 |
 
 ## Local development
 
