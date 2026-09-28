@@ -304,6 +304,10 @@ function FinetunePanel({ g, id, pid, say, changed }: { g: PipelineGraph; id: num
   const promote = async () => {
     try { await (ft.promoted_at ? api.demote(pid, ft.id) : api.promote(pid, ft.id)); changed() } catch (e) { say(errText(e)) }
   }
+  const exporting = g.active_jobs.some((j) => j.kind === 'export' && Number(j.config.finetune_id) === ft.id)
+  const sendToOllama = async () => {
+    try { const r = await api.exportFinetune(pid, ft.id); say(`Building ${r.model} in Ollama (job #${r.job.id}). A minute or two.`); changed() } catch (e) { say(errText(e)) }
+  }
   return (
     <>
       <div className="cv-tabs -mx-[18px] -mt-[14px]" role="tablist">
@@ -326,6 +330,9 @@ function FinetunePanel({ g, id, pid, say, changed }: { g: PipelineGraph; id: num
         <button className="cv-btn pri" onClick={evaluate} disabled={ft.status !== 'ready' || ft.dataset_id == null}>Send to Evaluate</button>
         <button className="cv-btn" onClick={promote} disabled={ft.status !== 'ready'}>{ft.promoted_at ? 'Unset current' : 'Make current'}</button>
         <button className="cv-btn" onClick={rerun} disabled={ft.dataset_id == null || ft.status === 'training' || ft.status === 'queued'}>Re-run</button>
+        {ft.ollama_model
+          ? <a className="cv-btn" href={`/chat?model=${encodeURIComponent(ft.ollama_model)}`}>Chat with it</a>
+          : <button className="cv-btn" onClick={sendToOllama} disabled={ft.status !== 'ready' || exporting}>{exporting ? 'Sending to Ollama…' : 'Send to Ollama'}</button>}
       </div>
     </>
   )

@@ -162,6 +162,7 @@ class FineTune(SQLModel, table=True):
     # The project's current best adapter (at most one per project): the baseline the learning
     # loop has to beat before a new one replaces it.
     promoted_at: datetime | None = None
+    ollama_model: str | None = None  # "<provider>/<name>" once exported, so the chat can use it
 
 
 class EvalRun(SQLModel, table=True):

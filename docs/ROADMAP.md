@@ -48,11 +48,16 @@ in Classic and an Inbox section in the Chat studio's context rail):
 Still to do for L2:
 
 - **Buckets** (MinIO / S3 prefixes) as a source kind, polled like folders.
-- **Export the promoted adapter to Ollama** (merge + GGUF, or Ollama's safetensors adapter import where
-  the architecture allows) so the chat can use it. Until then "promoted" means "the current best",
-  used as the loop's baseline and shown in the registry.
 - Deleted files in a watched folder leave their documents in place; offer "remove documents whose
   files are gone".
+
+Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):
+the adapter is merged into its base model, the safetensors and the base model's original tokenizer
+files are uploaded to the Ollama server as blobs, and Ollama builds the model with `/api/create`,
+quantized (q8_0 by default) and with a message template for the family (ChatML, Llama 3, Gemma).
+It then works in every chat as `ollama/llmcoach-<project>-ft<id>`. Two traps, both handled: tokenizer
+files re-saved by transformers 5 use a layout Ollama's converter misreads (the model answers in
+question marks), and Ollama doesn't always recognise the chat format on its own.
 
 Fixed along the way (0.6.0): a learn run that found nothing to learn from used to empty the dataset
 it appends to; now it keeps what was there. An indexing job cut short by a restart (an app update)
