@@ -11,7 +11,7 @@ import { usePolling } from '../../hooks/usePolling'
 import { useJobStream } from '../../hooks/streams'
 import { StudioSwitcher } from '../StudioSwitcher'
 import { rememberStudio } from '../registry'
-import { useChatSession } from '../chat/useChatSession'
+import { startingConversation, useChatSession } from '../chat/useChatSession'
 import { findings, type Scored } from '../findings'
 import { latestResult, nextSteps, type NextStep, type Target } from '../recommend'
 
@@ -251,7 +251,7 @@ function Chat({ g, changed }: { g: PipelineGraph; changed: () => void }) {
   const [opened, setOpened] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => { api.models('chat').then(setModels).catch(() => {}) }, [])
-  useEffect(() => { if (!opened && !active && session.conversations.length) { setOpened(true); session.open(session.conversations[0].id) } }, [opened, active, session])
+  useEffect(() => { if (!opened && !active && session.conversations.length) { setOpened(true); session.open(startingConversation(session.conversations)!) } }, [opened, active, session])
   const msgs = (active?.messages ?? []).filter((m) => m.role !== 'event')
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [msgs.length, pending?.answer])
   const model = settings.model ?? active?.model ?? smallest(models)

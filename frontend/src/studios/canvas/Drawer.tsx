@@ -7,7 +7,7 @@ import { stripAnsi } from '../../components/ansi'
 import { fmtTime } from '../../components/ui'
 import { useJobStream } from '../../hooks/streams'
 import { useProject } from '../../hooks/project'
-import { useChatSession } from '../chat/useChatSession'
+import { startingConversation, useChatSession } from '../chat/useChatSession'
 import { COLOR, type CardData } from './graph'
 import { ICON } from './NodeCard'
 
@@ -189,7 +189,7 @@ function ChatPanel() {
   const [opened, setOpened] = useState(false)
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!opened && !session.active && session.conversations.length) { setOpened(true); session.open(session.conversations[0].id) }
+    if (!opened && !session.active && session.conversations.length) { setOpened(true); session.open(startingConversation(session.conversations)!) }
   }, [opened, session])
   const msgs = (session.active?.messages ?? []).filter((m) => m.role !== 'event').slice(-8)
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [msgs.length, session.pending?.answer])
