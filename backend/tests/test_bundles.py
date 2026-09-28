@@ -87,3 +87,19 @@ def test_import_refuses_bad_bundles(client):
     assert r.status_code == 400 and "unsafe" in r.json()["detail"]
     assert not (settings.data_dir.parent / "escape.txt").exists()
     assert "evil" not in [x["name"] for x in client.get("/api/projects").json()]  # the half-import was removed
+
+
+def test_held_documents_stay_held_across_reindex_and_bundles(client):
+    pid = client.post("/api/projects", json={"name": "Held travels"}).json()["id"]
+    secret = b"password = hunter2hunter2\n" + b"Ops notes about the harbor. " * 40
+    up = client.post(f"/api/projects/{pid}/documents", files={"files": ("ops.md", io.BytesIO(secret), "text/markdown")}).json()
+    assert up["held"] and up["job"] is None
+    # "Re-index all" leaves a held document alone; only "Index anyway" (its own id) indexes it.
+    assert client.post(f"/api/projects/{pid}/documents/reindex", json={}).status_code == 400  # nothing else to index
+    assert client.get(f"/api/projects/{pid}/documents").json()[0]["status"] == "held"
+
+    bundle = client.get(f"/api/projects/{pid}/export").content
+    out = client.post("/api/projects/import", files={"file": ("b.zip", io.BytesIO(bundle), "application/zip")}).json()
+    assert out["documents"] == 1 and out["ingest_job_id"] is None
+    doc = client.get(f"/api/projects/{out['project']['id']}/documents").json()[0]
+    assert doc["status"] == "held" and doc["error"].startswith("Held back in the project this came from")
