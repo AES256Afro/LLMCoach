@@ -84,7 +84,7 @@ function SourcePanel({ g, id, pid, say, changed }: { g: PipelineGraph; id: numbe
   return (
     <>
       <Kpis items={[['Added', s.counts.added ?? 0], ['Held', s.counts.quarantined ?? 0], ['Waiting', s.counts.waiting ?? 0]]} />
-      <Params items={[['Folder', <code key="p" className="break-all text-[11.5px]">{s.path}</code>], ['New files', s.mode === 'learn' ? 'Index, then write Q&A' : 'Index'],
+      <Params items={[[s.kind === 'bucket' ? 'Bucket' : s.kind === 'web' ? 'Pages' : 'Folder', <code key="p" className="break-all text-[11.5px]">{s.path}</code>], ['New files', s.mode === 'learn' ? 'Index, then write Q&A' : 'Index'],
         ['Checks', { all: 'Secrets and personal data', secrets: 'Secrets only', off: 'None' }[s.scan]], ['Last look', s.last_scan_at ? fmtTime(s.last_scan_at) : 'not yet']]} />
       {s.last_error && <p className="text-xs text-[var(--bad)]">{s.last_error}</p>}
       <div className="flex flex-wrap gap-2">
