@@ -39,4 +39,12 @@ def parse_context() -> JobContext:
     # One line per HTTP request drowns the job's own progress lines.
     for noisy in ("httpx", "httpcore", "urllib3", "filelock"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Workers load the code on disk, which can be newer than the server that queued the job (a
+    # checkout updated under a running dev server): bring the schema up to what this code expects.
+    from ..db import init_db
+
+    try:
+        init_db()
+    except Exception:  # e.g. the server added the same column a moment ago
+        logging.getLogger(__name__).warning("schema check before the job failed", exc_info=True)
     return JobContext(args.job_dir)
