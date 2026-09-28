@@ -113,7 +113,7 @@ export default function WorkbenchStudio() {
   const say = useCallback((m: string) => { setNote(m); reload() }, [reload])
   const upload = async (files: File[]) => {
     if (!pid || !files.length) return
-    try { const r = await uploadDocuments(pid, files, () => {}); say(`added ${r.documents.length} document(s)${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}`) } catch (e) { say(String(e)) }
+    try { const r = await uploadDocuments(pid, files, () => {}); say(`added ${r.documents.length - r.held.length} document(s)${r.skipped.length ? `, skipped ${r.skipped.length}` : ''}${r.held.length ? `, held ${r.held.length} that may be private (see Knowledge)` : ''}`) } catch (e) { say(String(e)) }
   }
 
   const title = (key: string): [Icon, string] => {

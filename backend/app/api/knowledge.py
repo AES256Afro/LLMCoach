@@ -12,8 +12,9 @@ from sqlmodel import Session, select
 from ..config import settings
 from ..db import Document, DocStatus, Job, JobStatus, Project, engine, get_session
 from ..services import kb
+from ..services import scan as scanner
 from ..services.jobs import FINISH_HOOKS, manager
-from ..services.parsing import SUPPORTED
+from ..services.parsing import SUPPORTED, ParseError, parse
 from ..services.providers import ProviderError, resolve
 from .projects import get_project_or_404
 
@@ -63,15 +64,39 @@ def list_documents(project_id: int, session: Session = Depends(get_session)) -> 
 
 
 @router.post("/documents", status_code=201)
-async def upload_documents(project_id: int, files: list[UploadFile] = File(...),
+async def upload_documents(project_id: int, files: list[UploadFile] = File(...), check: bool = True,
                            session: Session = Depends(get_session)) -> dict:
     project = get_project_or_404(session, project_id)
     items = [(f.filename or "file", await f.read(MAX_FILE_BYTES + 1)) for f in files]
     added, skipped = await store_documents(session, project_id, items)
-    job = _submit_ingest(session, project, [d.id for d in added]) if added else None
+    ready, held = await hold_suspicious(session, added) if check else (added, [])
+    job = _submit_ingest(session, project, [d.id for d in ready]) if ready else None
     for d in added:
         session.refresh(d)
-    return {"documents": added, "skipped": skipped, "job": job}
+    return {"documents": added, "skipped": skipped, "held": held, "job": job}
+
+
+async def hold_suspicious(session: Session, docs: list[Document]) -> tuple[list[Document], list[dict]]:
+    """Splits newly stored documents into those to index and those held back because they look like
+    they contain secrets or personal data (the same check as the inbox). A held document stays
+    stored but unindexed, so nothing can quote it, until the owner indexes or removes it."""
+    ready, held = [], []
+    for d in docs:
+        try:
+            text = await asyncio.to_thread(lambda p=settings.data_dir / d.path: "\n\n".join(t for t, _ in parse(p)))
+        except ParseError:
+            ready.append(d)  # the indexing job reports why it can't be read
+            continue
+        findings = scanner.scan_text(text)
+        if findings:
+            held.append({"doc_id": d.id, "filename": d.filename, "findings": scanner.as_dicts(findings)})
+            d.status = DocStatus.held
+            d.error = "Held back: may contain " + ", ".join(f.label.lower() for f in findings) + ". Index it anyway, or remove it."
+            session.add(d)
+            session.commit()
+        else:
+            ready.append(d)
+    return ready, held
 
 
 async def store_documents(session: Session, project_id: int,

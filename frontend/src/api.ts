@@ -126,7 +126,7 @@ export interface AuthState {
 /** Fired when any request comes back 401 so the app can show the sign-in screen. */
 export const AUTH_REQUIRED_EVENT = 'llmcoach:auth-required'
 
-export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed'
+export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed' | 'held' // held: not indexed, may be private
 
 export interface KBDocument {
   id: number
@@ -172,7 +172,14 @@ export interface Chunk {
 export interface UploadResult {
   documents: KBDocument[]
   skipped: { filename: string; reason: string }[]
+  held: HeldFile[] // stored but not indexed: they look like they hold secrets or personal data
   job: Job | null
+}
+
+export interface HeldFile {
+  doc_id: number
+  filename: string
+  findings: Finding[]
 }
 
 export interface ChatStats {

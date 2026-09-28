@@ -308,7 +308,8 @@ function Knowledge({ g, changed }: { g: PipelineGraph; changed: () => void }) {
     setProgress(0)
     try {
       const r = await uploadDocuments(pid, files, setProgress)
-      setSaid(`Added ${r.documents.length}. ${r.skipped.length ? `${r.skipped.length} skipped: ${r.skipped.map((s) => `${s.filename} (${s.reason})`).join(', ')}.` : 'Your bot can use them in about a minute.'}`)
+      const held = r.held.length ? ` I held back ${r.held.map((h) => h.filename).join(', ')}: ${r.held.length === 1 ? 'it looks' : 'they look'} like ${r.held.length === 1 ? 'it has' : 'they have'} passwords or personal details. You can still add ${r.held.length === 1 ? 'it' : 'them'} from the Knowledge page in the Classic studio.` : ''
+      setSaid(`Added ${r.documents.length - r.held.length}. ${r.skipped.length ? `${r.skipped.length} skipped: ${r.skipped.map((s) => `${s.filename} (${s.reason})`).join(', ')}.` : 'Your bot can use them in about a minute.'}${held}`)
     } catch (e) { setSaid(errText(e)) }
     setProgress(null)
     reload()

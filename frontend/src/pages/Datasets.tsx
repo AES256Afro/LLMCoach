@@ -72,7 +72,7 @@ export function Datasets() {
       <Card title="Datasets" className="mb-6">
         {!list.length ? <Empty>No datasets yet.</Empty> : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-sm">
+            <table className="w-full min-w-[44rem] text-sm [&_td+td]:pl-4 [&_th+th]:pl-4">
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="pb-2 font-normal">Name</th>
@@ -97,7 +97,7 @@ export function Datasets() {
                     <td className="py-2 text-right font-mono">{d.row_count.toLocaleString()}</td>
                     <td className="py-2"><SplitBar splits={d.splits} /></td>
                     <td className="py-2 text-right font-mono text-muted">{d.stats?.tokens_mean ?? '—'}</td>
-                    <td className="py-2 text-muted">{fmtTime(d.created_at)}</td>
+                    <td className="whitespace-nowrap py-2 text-muted">{fmtTime(d.created_at)}</td>
                     <td className="whitespace-nowrap py-2 text-right text-xs">
                       {d.status === 'ready' && (
                         <a href={`/api/projects/${project.id}/datasets/${d.id}/download`} className="mr-3 text-muted hover:text-text">Download</a>

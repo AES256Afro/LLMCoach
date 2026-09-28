@@ -59,6 +59,11 @@ in Classic and an Inbox section in the Chat studio's context rail):
   tests) rather than through an SDK. A read-only key is enough; the secret is never returned by the
   API, and a new key is checked by listing the bucket before it's saved.
 
+- **Uploads get the same check** (0.8.0): files dropped into a chat or uploaded in any studio are
+  scanned too. One that looks private is stored with the status `held`, not indexed or learned from,
+  and the chat card or the Knowledge page offers *Index anyway* or *Remove*. The owner is there when
+  uploading, so this is a heads-up rather than the inbox's review queue.
+
 L2 is complete.
 
 Added in 0.7.0: **export a fine-tune to Ollama** (`POST /finetunes/{id}/export`, the `export` job):

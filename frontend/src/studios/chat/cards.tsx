@@ -5,8 +5,10 @@ import { Link } from 'react-router-dom'
 import {
   AlertTriangle, BarChart3, BookOpen, Brain, Check, FileText, Info, Loader2, Play, Terminal, X,
 } from 'lucide-react'
-import { api, isFinal, type ChatCardData, type Dataset, type EvalRun, type FineTune, type JobStatus } from '../../api'
+import { api, isFinal, type ChatCardData, type Dataset, type EvalRun, type FineTune, type HeldFile, type JobStatus } from '../../api'
 import { stripAnsi } from '../../components/ansi'
+import { HeldFiles } from '../../components/HeldFiles'
+import { useProject } from '../../hooks/project'
 import type { LocalCard } from './useChatSession'
 import { useJobLive } from './useJobLive'
 
@@ -66,13 +68,16 @@ interface LearnInfo { dataset_id: number; dataset_name: string; job_id: number; 
 export function AttachCard({ data, onCommand, onAsk }: { data: ChatCardData; onCommand: OnCommand; onAsk: (q: string) => void }) {
   const docs = (data.documents as { id: number; filename: string; size_bytes: number }[]) ?? []
   const skipped = (data.skipped as { filename: string; reason: string }[]) ?? []
+  const held = (data.held as HeldFile[] | undefined) ?? []
+  const pid = useProject().current?.id
   const learn = data.learn as LearnInfo | null
   const ingest = useJobLive(data.ingest_job_id as number | null, true)
   const status = ingest.job?.status
   const p = ingest.progress
   const title = docs.length
     ? <>Added {docs.length === 1 ? docs[0].filename : `${docs.length} files`} to the knowledge base</>
-    : learn ? <>Learning from files already in the knowledge base</> : <>Nothing new was added</>
+    : learn ? <>Learning from files already in the knowledge base</>
+    : held.length ? <>Held back {held.length === 1 ? held[0].filename : `${held.length} files`}</> : <>Nothing new was added</>
 
   return (
     <Shell icon={<BookOpen className="h-4 w-4" />} title={title} right={docs.length ? <StatusChip status={status} /> : undefined}>
@@ -103,6 +108,7 @@ export function AttachCard({ data, onCommand, onAsk }: { data: ChatCardData; onC
           {skipped.map((s) => <div key={s.filename}>Skipped {s.filename}: {s.reason}</div>)}
         </div>
       )}
+      {held.length > 0 && pid != null && <HeldFiles pid={pid} held={held} />}
       {learn && <LearnBlock learn={learn} onCommand={onCommand} />}
     </Shell>
   )
