@@ -74,7 +74,8 @@ export function ContextRail({ pid, selected, question, onPick, onCommand, onClos
   const s = selected?.stats
   // Each step's area, as this studio does it: most are a slash command away.
   const go = (step: NextStep) => {
-    if (step.target === 'knowledge') onPick()
+    if (step.id === 'held') navigate('/knowledge') // decided on the Knowledge page
+    else if (step.target === 'knowledge') onPick()
     else if (step.target === 'practice') onCommand('learn', 'all')
     else if (step.target === 'train') onCommand('train')
     else if (step.target === 'results') onCommand('compare')

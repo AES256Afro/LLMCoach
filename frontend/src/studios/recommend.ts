@@ -36,6 +36,8 @@ export function nextSteps(g: PipelineGraph, heldForReview = 0): NextStep[] {
   const f = result ? findings(result, g.datasets.find((d) => d.id === result.dataset_id)?.name) : null
 
   if (heldForReview) add({ id: 'review', title: `${heldForReview} file${heldForReview === 1 ? ' is' : 's are'} waiting for your OK`, detail: 'They may contain passwords or personal details.', target: 'inbox', tone: 'pri' })
+  const heldDocs = g.documents.by_status.held ?? 0
+  if (heldDocs) add({ id: 'held', title: `${heldDocs} upload${heldDocs === 1 ? ' is' : 's are'} held back`, detail: 'They look private, so nothing can quote them until you index or remove them.', target: 'knowledge', tone: 'pri' })
   if (!docs) {
     add({ id: 'docs', title: 'Add your documents', detail: 'Manuals, notes, PDFs: whatever your bot should know about.', target: 'knowledge', tone: 'sky' })
     return out
