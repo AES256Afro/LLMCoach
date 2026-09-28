@@ -1,0 +1,3 @@
+# Optional, NVIDIA only (UNSLOTH=1 at build time; docker-compose.gpu.yml sets it). Unsloth pins its own
+# torch and transformers versions, so the published -cuda image leaves it out; training picks it when present.
+unsloth
