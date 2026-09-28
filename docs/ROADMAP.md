@@ -117,5 +117,6 @@ Tag `vX.Y.Z` → the image workflow tests and publishes `ghcr.io/aes256afro/llmc
 Ollama; in BoxPilot 1.121.0 with the inbox volume), 0.8.0 (buckets, held uploads, Review first, split panes; BoxPilot
 1.123.0), 0.9.0 (web pages and feeds, OCR), 0.10.0 (moving projects), 0.10.1 (exported fine-tunes no longer write their
 own training data; BoxPilot 1.124.0) and 0.11.0 (voice notes, model cards, the Send to LLMCoach bookmarklet; BoxPilot
-1.125.0, which adds `LLMCOACH_WHISPER_URL`). Each tag also publishes `X.Y.Z-cuda` (from 0.8.0), and `/api/health`
+1.125.0, which adds `LLMCOACH_WHISPER_URL`) and 0.11.1 (held documents stay held through re-index-all and bundles;
+BoxPilot 1.126.0). Each tag also publishes `X.Y.Z-cuda` (from 0.8.0), and `/api/health`
 reports which version is running.
