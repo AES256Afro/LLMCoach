@@ -20,16 +20,33 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["chat"])
 
 
+def own_model(ref: str | None) -> bool:
+    """A fine-tune LLMCoach exported to Ollama (llmcoach-<project>-...)."""
+    return bool(ref) and ref.split("/", 1)[-1].startswith("llmcoach-")
+
+
 async def default_chat_model(session: Session) -> str:
-    """The smallest chat model on the first reachable provider (built-in Ollama first):
-    small is the right default on a CPU-only server."""
+    """The smallest chat model on the first reachable provider (built-in Ollama first): small is
+    the right default on a CPU-only server. LLMCoach's own exported fine-tunes come last: they're
+    small too, but they're what's being trained, not a general-purpose model."""
     for p in list_providers(session, enabled_only=True):
         st = await client_for(p).status()
         chat = [m for m in st["models"] if not m["embedding"]]
         if chat:
-            chat.sort(key=lambda m: m["size_gb"] if m["size_gb"] is not None else 1e9)
+            chat.sort(key=lambda m: (own_model(m["name"]), m["size_gb"] if m["size_gb"] is not None else 1e9))
             return f"{p.slug}/{chat[0]['name']}"
     raise HTTPException(409, "no chat model is available on any provider; pull one in Ollama or add a provider")
+
+
+async def writer_model(session: Session, project, preferred: str | None = None) -> str:
+    """The model that writes practice Q&A: the project's qa_model if set, else the preferred one
+    (the chat's), unless that is one of LLMCoach's own fine-tunes; a model writing its own training
+    data only learns what it already says."""
+    cfg = project.effective_settings()
+    for ref in (cfg.get("qa_model"), preferred, cfg.get("chat_model")):
+        if ref and (ref == cfg.get("qa_model") or not own_model(ref)):
+            return ref
+    return await default_chat_model(session)
 
 
 def _conv(session: Session, project_id: int, conversation_id: int) -> Conversation:
@@ -187,7 +204,7 @@ async def attach(project_id: int, mode: str = Form("remember"), conversation_id:
     learn = None
     if mode in ("learn", "review") and learn_ids:
         cfg = project.effective_settings()
-        model_ref = model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+        model_ref = await writer_model(session, project, model or conv.model)
         names = [d.filename for d in ready] + [s["filename"] for s in skipped if s.get("doc_id")]
         label = (names[0] if len(names) == 1 else f"{len(names)} files") if mode == "review" else None
         dataset, job = learn_into_chat_dataset(session, project, model_ref, learn_ids,
@@ -241,8 +258,7 @@ async def learn_from_knowledge(project_id: int, body: LearnRequest, session: Ses
         session.add(conv)
         session.commit()
         session.refresh(conv)
-    cfg = project.effective_settings()
-    model_ref = body.model or conv.model or cfg.get("chat_model") or await default_chat_model(session)
+    model_ref = await writer_model(session, project, body.model or conv.model)
     dataset, job = learn_into_chat_dataset(session, project, model_ref, None, max_chunks=body.max_chunks)
     msg = add_event(session, conv, f"Writing Q&A pairs from up to {body.max_chunks} passages into “{dataset.name}”",
                     {"card": "learn", "learn": {"dataset_id": dataset.id, "dataset_name": dataset.name,

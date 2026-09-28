@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api, uploadDocuments, type EvalRun, type JobEvent, type KBDocument, type ModelRef, type PipelineGraph, type TrainingOptions } from '../../api'
+import { api, defaultModel, uploadDocuments, type EvalRun, type JobEvent, type KBDocument, type ModelRef, type PipelineGraph, type TrainingOptions } from '../../api'
 import { metricRows } from '../../components/LossChart'
 import { fmtTime } from '../../components/ui'
 import { usePolling } from '../../hooks/usePolling'
 import { findings, KIND_WORDS, reportMarkdown } from '../findings'
 
 const err = (e: unknown) => (e instanceof Error ? e.message.replace(/^\d+: /, '') : String(e))
-const smallest = (ms: ModelRef[]) => [...ms].sort((a, b) => (a.size_gb ?? 1e9) - (b.size_gb ?? 1e9))[0]?.ref ?? ''
+const smallest = (ms: ModelRef[]) => defaultModel(ms) ?? ''
 
 function Page({ eye, title, lede, children, margin }: { eye: string; title: ReactNode; lede?: ReactNode; children: ReactNode; margin: ReactNode }) {
   return (

@@ -104,6 +104,26 @@ def test_review_drop_waits_for_the_owner(client, fake):
     assert client.post(f"/api/projects/{pid}/datasets/{acc['dataset']['id']}/accept", json={"rows": [0]}).status_code == 409
 
 
+def test_own_finetunes_never_write_their_training_data(client, fake):
+    # An exported fine-tune is the smallest model on the server, but it's not a general-purpose writer.
+    fake.app.state.extra_models = [{"name": "llmcoach-shop-ft3:latest", "size": 1024**2 * 500, "details": {"family": "qwen2"}}]
+    try:
+        pid = client.post("/api/projects", json={"name": "studio-writer"}).json()["id"]
+        own = "ollama/llmcoach-shop-ft3:latest"
+        r = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": own},
+                        files=[("files", ("guide.md", io.BytesIO(_text(2, "Writer")), "text/markdown"))]).json()
+        assert r["message"]["data"]["learn"]["model"] == "ollama/chatty:1b"  # not the fine-tune the chat uses
+        wait_final(client, r["message"]["data"]["ingest_job_id"])
+        wait_final(client, r["message"]["data"]["learn"]["job_id"])
+        # Chosen on purpose, it's respected.
+        client.patch(f"/api/projects/{pid}", json={"settings": {"qa_model": own}})
+        r = client.post(f"/api/projects/{pid}/chat/learn", json={"max_chunks": 1}).json()
+        assert r["message"]["data"]["learn"]["model"] == own
+        wait_final(client, r["message"]["data"]["learn"]["job_id"])
+    finally:
+        fake.app.state.extra_models = []
+
+
 def test_learn_drop_appends_and_keeps_splits(client, fake):
     pid = client.post("/api/projects", json={"name": "studio-learn"}).json()["id"]
     first = client.post(f"/api/projects/{pid}/chat/attach", data={"mode": "learn", "model": "ollama/chatty:1b"},

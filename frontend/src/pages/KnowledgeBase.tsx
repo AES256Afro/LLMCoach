@@ -199,6 +199,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   const [overlap, setOverlap] = useState(s.chunk_overlap)
   const [topK, setTopK] = useState(s.top_k)
   const [mode, setMode] = useState(s.search_mode)
+  const [qaModel, setQaModel] = useState(s.qa_model ?? null)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -207,13 +208,14 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
     setOverlap(s.chunk_overlap)
     setTopK(s.top_k)
     setMode(s.search_mode)
-  }, [s.embed_model, s.chunk_size, s.chunk_overlap, s.top_k, s.search_mode])
+    setQaModel(s.qa_model ?? null)
+  }, [s.embed_model, s.chunk_size, s.chunk_overlap, s.top_k, s.search_mode, s.qa_model])
 
   const dirty = embed !== s.embed_model || size !== s.chunk_size || overlap !== s.chunk_overlap || topK !== s.top_k
-    || mode !== s.search_mode
+    || mode !== s.search_mode || qaModel !== (s.qa_model ?? null)
   const save = async (e: FormEvent) => {
     e.preventDefault()
-    await api.updateProject(project!.id, { settings: { embed_model: embed, chunk_size: size, chunk_overlap: overlap, top_k: topK, search_mode: mode } })
+    await api.updateProject(project!.id, { settings: { embed_model: embed, chunk_size: size, chunk_overlap: overlap, top_k: topK, search_mode: mode, qa_model: qaModel } })
     onSaved()
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2000)
@@ -238,6 +240,10 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
             <option value="hybrid">Hybrid: keywords + meaning (recommended)</option>
             <option value="vector">Meaning only (vectors)</option>
           </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-muted">Writes practice Q&amp;A</span>
+          <ModelSelect capability="chat" value={qaModel} onChange={setQaModel} allowDefault="Automatic: the chat's model, never your own fine-tunes" className="w-full" />
         </label>
         <p className="text-xs text-muted">Chunk settings apply to documents indexed from now on. Changing the embedding model needs a re-index.</p>
         <Button type="submit" disabled={!dirty}>{saved ? 'Saved' : 'Save'}</Button>
