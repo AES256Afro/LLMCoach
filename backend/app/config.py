@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     session_secret: str = ""
     # Hugging Face token, only needed for gated base models (Llama, Gemma).
     hf_token: str = ""
+    # A Whisper service for recordings (BoxPilot's Whisper app: http://host.docker.internal:9002).
+    # The Providers page can set it too, which wins.
+    whisper_url: str = ""
     # Allow the Vite dev server during development.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
